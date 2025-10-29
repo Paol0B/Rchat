@@ -23,6 +23,10 @@ struct Args {
     /// Server host
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
+
+    /// Enable verbose logging (connections, operations, etc.)
+    #[arg(short, long, default_value_t = false)]
+    verbose: bool,
 }
 
 #[tokio::main]
@@ -31,9 +35,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🔒 Rchat Server v0.1.0");
     println!("🚀 Starting server on {}:{}...", args.host, args.port);
+    
+    if args.verbose {
+        println!("📝 Verbose logging: ENABLED");
+    }
 
     // Global server state
     let state = Arc::new(ChatState::new(false)); // Parameter no longer used
+    let verbose = args.verbose;
 
     // Configure TLS
     let tls_acceptor = configure_tls()?;
@@ -46,7 +55,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (stream, addr) = listener.accept().await?;
-        println!("📡 New connection from {}", addr);
+        if verbose {
+            println!("📡 New connection from {}", addr);
+        }
 
         let state = Arc::clone(&state);
         let acceptor = tls_acceptor.clone();
@@ -54,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             match acceptor.accept(stream).await {
                 Ok(tls_stream) => {
-                    if let Err(e) = handle_client(tls_stream, state, addr.to_string()).await {
+                    if let Err(e) = handle_client(tls_stream, state, addr.to_string(), verbose).await {
                         eprintln!("❌ Client handling error {}: {}", addr, e);
                     }
                 }
@@ -70,6 +81,7 @@ async fn handle_client(
     stream: tokio_rustls::server::TlsStream<TcpStream>,
     state: Arc<ChatState>,
     client_id: String,
+    verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
     let mut current_chat: Option<(String, String)> = None; // (room_id, room_client_id)
@@ -162,7 +174,7 @@ async fn handle_client(
 
                         // Notifica gli altri partecipanti (escludi il nuovo arrivato)
                         state
-                            .broadcast_user_event(&room_id, username, true, Some(&room_client_id))
+                            .broadcast_user_event(&room_id, username, true, Some(&room_client_id), verbose)
                             .await;
                     }
                     Err(e) => {
@@ -183,29 +195,35 @@ async fn handle_client(
                 
                 // Then broadcast the message to all participants
                 state
-                    .broadcast_message(&room_id, encrypted_payload, &message_id, &client_id)
+                    .broadcast_message(&room_id, encrypted_payload, &message_id, &client_id, verbose)
                     .await;
             }
 
             ClientMessage::LeaveChat { room_id } => {
                 if let Some((ref stored_room_id, ref room_client_id)) = current_chat {
                     if stored_room_id == &room_id {
-                        println!("📤 Client {} (room_id: {}) requested to leave chat {}", 
-                            &client_id[..8.min(client_id.len())], 
-                            &room_client_id[..16.min(room_client_id.len())],
-                            &room_id[..8.min(room_id.len())]);
+                        if verbose {
+                            println!("📤 Client {} (room_id: {}) requested to leave chat {}", 
+                                &client_id[..8.min(client_id.len())], 
+                                &room_client_id[..16.min(room_client_id.len())],
+                                &room_id[..8.min(room_id.len())]);
+                        }
                         
                         // Broadcast BEFORE removing the user, so others can still receive the notification
                         // Exclude the leaving user from receiving their own leave notification
                         if let Some(username) = state.get_username(&room_id, room_client_id).await {
-                            println!("   User '{}' is leaving, broadcasting to others...", username);
+                            if verbose {
+                                println!("   User '{}' is leaving, broadcasting to others...", username);
+                            }
                             state
-                                .broadcast_user_event(&room_id, username.clone(), false, Some(room_client_id))
+                                .broadcast_user_event(&room_id, username.clone(), false, Some(room_client_id), verbose)
                                 .await;
                             // Now remove the user
                             state.leave_chat(&room_id, room_client_id).await;
-                            println!("   ✓ User '{}' removed from room", username);
-                        } else {
+                            if verbose {
+                                println!("   ✓ User '{}' removed from room", username);
+                            }
+                        } else if verbose {
                             println!("   ⚠️ Could not find username for room_client {}", room_client_id);
                         }
                     }
@@ -217,24 +235,32 @@ async fn handle_client(
 
     // Cleanup alla disconnessione
     if let Some((room_id, room_client_id)) = current_chat {
-        println!("🧹 Cleanup: Client {} (room_id: {}) disconnected from room {}", 
-            &client_id[..8.min(client_id.len())], 
-            &room_client_id[..16.min(room_client_id.len())],
-            &room_id[..8.min(room_id.len())]);
+        if verbose {
+            println!("🧹 Cleanup: Client {} (room_id: {}) disconnected from room {}", 
+                &client_id[..8.min(client_id.len())], 
+                &room_client_id[..16.min(room_client_id.len())],
+                &room_id[..8.min(room_id.len())]);
+        }
         
         // Broadcast BEFORE removing the user
         // Exclude the disconnecting user (they won't receive it anyway)
         if let Some(username) = state.get_username(&room_id, &room_client_id).await {
-            println!("   User '{}' disconnected, broadcasting to others...", username);
-            state.broadcast_user_event(&room_id, username.clone(), false, Some(&room_client_id)).await;
+            if verbose {
+                println!("   User '{}' disconnected, broadcasting to others...", username);
+            }
+            state.broadcast_user_event(&room_id, username.clone(), false, Some(&room_client_id), verbose).await;
             state.leave_chat(&room_id, &room_client_id).await;
-            println!("   ✓ User '{}' removed from room", username);
-        } else {
+            if verbose {
+                println!("   ✓ User '{}' removed from room", username);
+            }
+        } else if verbose {
             println!("   ⚠️ Could not find username for disconnected room_client {}", room_client_id);
         }
     }
 
-    println!("👋 Client {} disconnected", client_id);
+    if verbose {
+        println!("👋 Client {} disconnected", client_id);
+    }
     Ok(())
 }
 

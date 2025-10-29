@@ -37,26 +37,34 @@ impl ChatRoom {
         self.participants.remove(client_id).map(|(username, _)| username)
     }
 
-    pub async fn broadcast(&self, msg: ServerMessage, exclude_client: Option<&str>) {
+    pub async fn broadcast(&self, msg: ServerMessage, exclude_client: Option<&str>, verbose: bool) {
         let mut sent_count = 0;
         for (client_id, (username, tx)) in &self.participants {
             if let Some(exclude) = exclude_client {
                 if client_id == exclude {
-                    println!("   ⊘ Skipping client: {} ({})", &client_id[..8.min(client_id.len())], username);
+                    if verbose {
+                        println!("   ⊘ Skipping client: {} ({})", &client_id[..8.min(client_id.len())], username);
+                    }
                     continue;
                 }
             }
             match tx.send(msg.clone()).await {
                 Ok(_) => {
-                    println!("   ✓ Sent to client: {} ({})", &client_id[..8.min(client_id.len())], username);
+                    if verbose {
+                        println!("   ✓ Sent to client: {} ({})", &client_id[..8.min(client_id.len())], username);
+                    }
                     sent_count += 1;
                 }
                 Err(e) => {
-                    println!("   ✗ Failed to send to {}: {}", &client_id[..8.min(client_id.len())], e);
+                    if verbose {
+                        println!("   ✗ Failed to send to {}: {}", &client_id[..8.min(client_id.len())], e);
+                    }
                 }
             }
         }
-        println!("   📊 Total sent: {}/{}", sent_count, self.participants.len());
+        if verbose {
+            println!("   📊 Total sent: {}/{}", sent_count, self.participants.len());
+        }
     }
 }
 
@@ -130,6 +138,7 @@ impl ChatState {
         encrypted_payload: Vec<u8>,
         message_id: &str,
         _sender_id: &str,
+        verbose: bool,
     ) {
         let chats = self.chats.lock().await;
         if let Some(room) = chats.get(room_id) {
@@ -145,21 +154,23 @@ impl ChatState {
                 message_id: message_id.to_string(),
             };
             // Send to ALL, including the sender (None = no exclusion)
-            room.broadcast(msg, None).await;
+            room.broadcast(msg, None, verbose).await;
         }
     }
 
-    pub async fn broadcast_user_event(&self, room_id: &str, username: String, joined: bool, exclude_client: Option<&str>) {
+    pub async fn broadcast_user_event(&self, room_id: &str, username: String, joined: bool, exclude_client: Option<&str>, verbose: bool) {
         let chats = self.chats.lock().await;
         if let Some(room) = chats.get(room_id) {
             let room = room.lock().await;
             
-            let event_type = if joined { "joined" } else { "left" };
-            let excluded = exclude_client.map(|c| &c[..8.min(c.len())]).unwrap_or("none");
-            let participant_count = room.participants.len();
-            
-            println!("🔔 User '{}' {} | Room {} | {} participants | Excluding: {}", 
-                username, event_type, &room_id[..8.min(room_id.len())], participant_count, excluded);
+            if verbose {
+                let event_type = if joined { "joined" } else { "left" };
+                let excluded = exclude_client.map(|c| &c[..8.min(c.len())]).unwrap_or("none");
+                let participant_count = room.participants.len();
+                
+                println!("🔔 User '{}' {} | Room {} | {} participants | Excluding: {}", 
+                    username, event_type, &room_id[..8.min(room_id.len())], participant_count, excluded);
+            }
             
             let msg = if joined {
                 ServerMessage::UserJoined {
@@ -173,20 +184,22 @@ impl ChatState {
                 }
             };
             
-            // Count how many will receive
-            let mut sent_to = 0;
-            for (cid, _) in &room.participants {
-                if let Some(exclude) = exclude_client {
-                    if cid == exclude {
-                        continue;
+            if verbose {
+                // Count how many will receive
+                let mut sent_to = 0;
+                for (cid, _) in &room.participants {
+                    if let Some(exclude) = exclude_client {
+                        if cid == exclude {
+                            continue;
+                        }
                     }
+                    sent_to += 1;
                 }
-                sent_to += 1;
+                println!("   → Sending to {} clients", sent_to);
             }
-            println!("   → Sending to {} clients", sent_to);
             
-            room.broadcast(msg, exclude_client).await;
-        } else {
+            room.broadcast(msg, exclude_client, verbose).await;
+        } else if verbose {
             println!("⚠️  Room {} not found!", &room_id[..8.min(room_id.len())]);
         }
     }
