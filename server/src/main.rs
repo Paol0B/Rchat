@@ -16,11 +16,11 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB max
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Porta del server
+    /// Server port
     #[arg(short, long, default_value_t = 6666)]
     port: u16,
 
-    /// Host del server
+    /// Server host
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
 }
@@ -30,23 +30,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     println!("🔒 Rchat Server v0.1.0");
-    println!("🚀 Avvio server su {}:{}...", args.host, args.port);
+    println!("🚀 Starting server on {}:{}...", args.host, args.port);
 
-    // Stato globale del server
-    let state = Arc::new(ChatState::new(false)); // Il parametro non è più usato
+    // Global server state
+    let state = Arc::new(ChatState::new(false)); // Parameter no longer used
 
-    // Configura TLS
+    // Configure TLS
     let tls_acceptor = configure_tls()?;
 
-    // Bind sulla porta
+    // Bind to port
     let listener = TcpListener::bind(format!("{}:{}", args.host, args.port)).await?;
-    println!("✅ Server in ascolto su {}:{}", args.host, args.port);
-    println!("⚠️  ATTENZIONE: Tutti i dati sono volatili e NON persistiti su disco");
+    println!("✅ Server listening on {}:{}", args.host, args.port);
+    println!("⚠️  WARNING: All data is volatile and NOT persisted to disk");
     println!();
 
     loop {
         let (stream, addr) = listener.accept().await?;
-        println!("📡 Nuova connessione da {}", addr);
+        println!("📡 New connection from {}", addr);
 
         let state = Arc::clone(&state);
         let acceptor = tls_acceptor.clone();
@@ -55,11 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match acceptor.accept(stream).await {
                 Ok(tls_stream) => {
                     if let Err(e) = handle_client(tls_stream, state, addr.to_string()).await {
-                        eprintln!("❌ Errore gestione client {}: {}", addr, e);
+                        eprintln!("❌ Client handling error {}: {}", addr, e);
                     }
                 }
                 Err(e) => {
-                    eprintln!("❌ Errore TLS handshake con {}: {}", addr, e);
+                    eprintln!("❌ TLS handshake error with {}: {}", addr, e);
                 }
             }
         });
@@ -197,7 +197,7 @@ async fn handle_client(
         }
     }
 
-    println!("👋 Client {} disconnesso", client_id);
+    println!("👋 Client {} disconnected", client_id);
     Ok(())
 }
 
@@ -207,15 +207,15 @@ fn configure_tls() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
     use std::fs::File;
     use std::io::BufReader;
 
-    // Carica certificato e chiave (self-signed per demo)
+    // Load certificate and key (self-signed for demo)
     let cert_path = "server.crt";
     let key_path = "server.key";
 
-    // Genera certificati se non esistono
+    // Generate certificates if they don't exist
     if !std::path::Path::new(cert_path).exists() {
-        eprintln!("⚠️  Certificati TLS non trovati. Genera con:");
-        eprintln!("   openssl req -x509 -newkey rsa:4096 -nodes -keyout server.key -out server.crt -days 365 -subj '/CN=localhost'");
-        return Err("Certificati TLS mancanti".into());
+        eprintln!("⚠️  TLS certificates not found. Generate with:");
+        eprintln!("   openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'");
+        return Err("Missing TLS certificates".into());
     }
 
     let cert_file = File::open(cert_path)?;

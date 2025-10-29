@@ -129,11 +129,11 @@ fn draw_welcome(f: &mut Frame) {
 
     // Menu
     let menu_items = vec![
-        "Premi:",
+        "Press:",
         "",
-        "[1] Crea nuova chat",
-        "[2] Unisciti a una chat",
-        "[Q] Esci",
+        "[1] Create new chat",
+        "[2] Join a chat",
+        "[Q] Quit",
     ];
 
     let menu_lines: Vec<Line> = menu_items
@@ -147,7 +147,7 @@ fn draw_welcome(f: &mut Frame) {
     f.render_widget(menu, chunks[1]);
 
     // Footer
-    let footer = Paragraph::new("⚠️  Tutti i messaggi sono volatili e mai persistiti")
+    let footer = Paragraph::new("⚠️  All messages are volatile and never persisted")
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -161,12 +161,12 @@ fn draw_create_chat(f: &mut Frame) {
         .split(f.area());
 
     let menu_items = vec![
-        "Seleziona tipo di chat:",
+        "Select chat type:",
         "",
-        "[1] Chat 1:1 (max 2 partecipanti)",
-        "[2] Chat di gruppo (max 8 partecipanti)",
+        "[1] 1:1 Chat (max 2 participants)",
+        "[2] Group Chat (max 8 participants)",
         "",
-        "[ESC] Torna indietro",
+        "[ESC] Go back",
     ];
 
     let menu_lines: Vec<Line> = menu_items
@@ -176,10 +176,10 @@ fn draw_create_chat(f: &mut Frame) {
 
     let menu = Paragraph::new(menu_lines)
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Crea Chat"));
+        .block(Block::default().borders(Borders::ALL).title("Create Chat"));
     f.render_widget(menu, chunks[0]);
 
-    let footer = Paragraph::new("Verrà generato un codice sicuro da condividere")
+    let footer = Paragraph::new("A secure code will be generated to share")
         .style(Style::default().fg(Color::Green))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -192,18 +192,18 @@ fn draw_join_chat(f: &mut Frame, app: &App) {
         .constraints([Constraint::Min(5), Constraint::Length(3), Constraint::Length(3)])
         .split(f.area());
 
-    let instructions = Paragraph::new("Inserisci il codice della chat:")
+    let instructions = Paragraph::new("Enter the chat code:")
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Unisciti"));
+        .block(Block::default().borders(Borders::ALL).title("Join"));
     f.render_widget(instructions, chunks[0]);
 
     let input = Paragraph::new(app.input.as_str())
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Codice"));
+        .block(Block::default().borders(Borders::ALL).title("Code"));
     f.render_widget(input, chunks[1]);
 
-    let footer = Paragraph::new("[ENTER] Conferma | [CTRL+V / SHIFT+INS / Click Destro] Incolla | [ESC] Annulla")
+    let footer = Paragraph::new("[ENTER] Confirm | [CTRL+V / SHIFT+INS / Right Click] Paste | [ESC] Cancel")
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -212,7 +212,7 @@ fn draw_join_chat(f: &mut Frame, app: &App) {
 
 fn draw_waiting(f: &mut Frame) {
     let area = f.area();
-    let msg = Paragraph::new("⏳ In attesa di risposta dal server...")
+    let msg = Paragraph::new("⏳ Waiting for server response...")
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL).title("Rchat"));
     f.render_widget(msg, area);
@@ -273,7 +273,7 @@ fn draw_chat(f: &mut Frame, app: &App) {
         .collect();
 
     let scroll_indicator = if total_messages > message_area_height && app.scroll_offset > 0 {
-        format!(" (↑ {} messaggi più vecchi)", app.scroll_offset)
+        format!(" (↑ {} older messages)", app.scroll_offset)
     } else {
         String::new()
     };
@@ -281,19 +281,19 @@ fn draw_chat(f: &mut Frame, app: &App) {
     let messages_list = List::new(messages).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!("Messaggi (E2EE){}", scroll_indicator)),
+            .title(format!("Messages (E2EE){}", scroll_indicator)),
     );
     f.render_widget(messages_list, chunks[1]);
 
     // Input
     let input = Paragraph::new(app.input.as_str())
         .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL).title("Messaggio"));
+        .block(Block::default().borders(Borders::ALL).title("Message"));
     f.render_widget(input, chunks[2]);
 
     // Footer
     let footer_text = if app.status_message.is_empty() {
-        "[ENTER] Invia | [↑↓] Scroll | [ESC] Esci | [CTRL+C] Termina".to_string()
+        "[ENTER] Send | [↑↓] Scroll | [ESC] Exit | [CTRL+C] Terminate".to_string()
     } else {
         app.status_message.clone()
     };

@@ -1,63 +1,63 @@
 # 🔒 Rchat - End-to-End Encrypted Chat
 
-Sistema di chat moderna in Rust con crittografia end-to-end completa, architettura client-server asincrona e interfaccia terminale (TUI) intuitiva.
+Modern chat system in Rust with complete end-to-end encryption, asynchronous client-server architecture, and intuitive terminal user interface (TUI).
 
-## ✨ Caratteristiche
+## ✨ Features
 
-### Sicurezza Estrema (Military-Grade)
-- **End-to-End Encryption (E2EE)** usando **XChaCha20-Poly1305** (nonce 192-bit)
-- **Argon2id** per key derivation (vincitore Password Hashing Competition)
-  - 128 MB di memoria per resistenza a attacchi GPU/ASIC
-  - 4 iterazioni + 8 thread paralleli
-  - Protezione contro timing attacks e side-channel attacks
-- **BLAKE3 + SHA3-512** double hashing per room IDs
-- **Codici chat 512-bit** (vs 256-bit standard) per resistenza quantistica
-- **TLS 1.3** per tutte le connessioni client-server (rustls)
-- **Nessun storage persistente**: tutti i dati esistono solo in RAM
-- **Zeroizzazione automatica** di chiavi e dati sensibili (zeroize crate)
-- **Server zero-knowledge**: il server non conosce mai i codici chat originali
-- **AEAD (Authenticated Encryption)**: XChaCha20-Poly1305 garantisce autenticità e confidenzialità
+### Extreme Security (Military-Grade)
+- **End-to-End Encryption (E2EE)** using **XChaCha20-Poly1305** (192-bit nonce)
+- **Argon2id** for key derivation (Password Hashing Competition winner)
+  - 128 MB memory for GPU/ASIC attack resistance
+  - 4 iterations + 8 parallel threads
+  - Protection against timing attacks and side-channel attacks
+- **BLAKE3 + SHA3-512** double hashing for room IDs
+- **512-bit chat codes** (vs 256-bit standard) for quantum resistance
+- **TLS 1.3** for all client-server connections (rustls)
+- **No persistent storage**: all data exists only in RAM
+- **Automatic zeroization** of keys and sensitive data (zeroize crate)
+- **Server zero-knowledge**: server never knows original chat codes
+- **AEAD (Authenticated Encryption)**: XChaCha20-Poly1305 ensures authenticity and confidentiality
 
-### Architettura Moderna
-- **Server asincrono** con Tokio (porta 6666)
-- **Gestione concorrenza** con Arc<Mutex> e canali mpsc
-- **Workspace Cargo** con 3 crate: server, client, common
-- **Serializzazione binaria** efficiente con bincode
-- **Dipendenze aggiornate** (ottobre 2025)
+### Modern Architecture
+- **Asynchronous server** with Tokio (port 6666)
+- **Concurrency management** with Arc<Mutex> and mpsc channels
+- **Cargo workspace** with 3 crates: server, client, common
+- **Efficient binary serialization** with bincode
+- **Up-to-date dependencies** (October 2025)
 
-### Interfaccia Utente
-- **TUI reattiva** con Ratatui e Crossterm
-- **ASCII art** minimalista nella schermata iniziale
-- **Chat real-time** con timestamp [HH:MM]
-- **Scroll automatico** dei messaggi
-- **Copia/Incolla**: CTRL+V per incollare codici chat 📋
-- **Auto-copy**: Codice chat copiato automaticamente alla creazione 📋
-- **Notifiche** di entrata/uscita utenti
+### User Interface
+- **Reactive TUI** with Ratatui and Crossterm
+- **Minimalist ASCII art** on welcome screen
+- **Real-time chat** with [HH:MM] timestamps
+- **Automatic message scrolling**
+- **Copy/Paste**: CTRL+V to paste chat codes 📋
+- **Auto-copy**: Chat code copied automatically on creation 📋
+- **User join/leave notifications**
 
-### Tipi di Chat
-1. **1:1**: Massimo 2 partecipanti
-2. **Gruppo**: Massimo 8 partecipanti (configurabile)
+### Chat Types
+1. **1:1**: Maximum 2 participants
+2. **Group**: Maximum 8 participants (configurable)
 
-## 📋 Requisiti
+## 📋 Requirements
 
-- Rust 1.75+ (edizione 2021)
-- OpenSSL per generazione certificati (opzionale per demo)
+- Rust 1.75+ (edition 2021)
+- OpenSSL for certificate generation (optional for demo)
 
-## 🚀 Setup e Compilazione
+## 🚀 Setup and Compilation
 
-### 1. Clona il repository
+### 1. Clone the repository
 
 ```bash
 cd /home/paol0b/sources/Rchat
 ```
 
-### 2. Genera certificati TLS (self-signed per demo)
+### 2. Generate TLS certificates (self-signed for demo)
 
 ```bash
 ./generate_certs.sh
 ```
 
-Oppure manualmente:
+Or manually:
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -nodes \
@@ -65,265 +65,266 @@ openssl req -x509 -newkey rsa:4096 -nodes \
   -subj '/CN=localhost'
 ```
 
-**IMPORTANTE**: In produzione, usa certificati firmati da una CA affidabile.
+**IMPORTANT**: In production, use certificates signed by a trusted CA.
 
-### 3. Compila il progetto
+### 3. Compile the project
 
 ```bash
 cargo build --release
 ```
 
-## 🎮 Uso
+## 🎮 Usage
 
-### Avvia il Server
+### Start the Server
 
 ```bash
 cargo run --bin server --release
 ```
 
-Il server si avvia e attende connessioni. Non ha bisogno di sapere se i client useranno codici numerici o base64.
+The server starts and waits for connections. It doesn't need to know whether clients will use numeric or base64 codes.
 
-Parametri del server:
-- `--host`: Indirizzo di bind (default: 0.0.0.0)
-- `--port`: Porta del server (default: 6666)
+Server parameters:
+- `--host`: Bind address (default: 0.0.0.0)
+- `--port`: Server port (default: 6666)
 
-### Avvia il Client
+### Start the Client
 
-**Client standard (codici base64 completi - più sicuro):**
+**Standard client (full base64 codes - more secure):**
 ```bash
 cargo run --bin client --release -- --host 127.0.0.1 --port 6666 --username Alice
 ```
 
-**Client con codici numerici a 6 cifre (più semplice da condividere):**
+**Client with 6-digit numeric codes (easier to share):**
 ```bash
 cargo run --bin client --release -- --host 127.0.0.1 --port 6666 --username Alice --numeric-codes
 ```
 
-⚠️ **ATTENZIONE**: I codici numerici hanno solo ~20 bit di entropia (1 milione di combinazioni) rispetto ai 256 bit dei codici completi. Sono più facili da digitare ma meno sicuri contro attacchi brute-force.
+⚠️ **WARNING**: Numeric codes have only ~20 bits of entropy (1 million combinations) compared to 512 bits of full codes. They're easier to type but less secure against brute-force attacks.
 
-Parametri del client:
-- `--host`: Indirizzo IP del server (default: 127.0.0.1)
-- `--port`: Porta del server (default: 6666)
-- `--username`: Il tuo nome utente (richiesto)
-- `--insecure`: Accetta certificati self-signed (⚠️ SOLO per testing!)
-- `--numeric-codes`: Genera codici a 6 cifre invece di base64 (più facili da condividere)
+Client parameters:
+- `--host`: Server IP address (default: 127.0.0.1)
+- `--port`: Server port (default: 6666)
+- `--username`: Your username (required)
+- `--insecure`: Accept self-signed certificates (⚠️ TESTING ONLY!)
+- `--numeric-codes`: Generate 6-digit codes instead of base64 (easier to share)
 
-**Per testing locale con certificati self-signed:**
+**For local testing with self-signed certificates:**
 
 ```bash
 cargo run --bin client --release -- --username Alice --insecure
 ```
 
-⚠️ **IMPORTANTE**: L'opzione `--insecure` disabilita la verifica dei certificati TLS e deve essere usata SOLO per testing in ambiente locale. NON usarla mai in produzione!
+⚠️ **IMPORTANT**: The `--insecure` option disables TLS certificate verification and should ONLY be used for testing in a local environment. NEVER use it in production!
 
-### Flusso di Utilizzo
+### Usage Flow
 
-1. **Schermata Welcome**:
-   - Premi `1` per creare una nuova chat
-   - Premi `2` per unirti a una chat esistente
-   - Premi `Q` per uscire
+1. **Welcome Screen**:
+   - Press `1` to create a new chat
+   - Press `2` to join an existing chat
+   - Press `Q` to quit
 
-2. **Creare una Chat**:
-   - Scegli tipo: `1` per 1:1, `2` per gruppo
-   - Il sistema genera un codice univoco:
-     - Formato standard: `xJ4k9L2m...` (base64, 43 caratteri)
-     - Formato numerico: `123456` (6 cifre) - solo se client avviato con `--numeric-codes`
-   - **Il codice viene copiato automaticamente nella clipboard!** 📋
-   - Condividi il codice con gli altri partecipanti
+2. **Create a Chat**:
+   - Choose type: `1` for 1:1, `2` for group
+   - System generates a unique code:
+     - Standard format: `xJ4k9L2m...` (base64, 43 characters)
+     - Numeric format: `123456` (6 digits) - only if client started with `--numeric-codes`
+   - **Code is automatically copied to clipboard!** 📋
+   - Share the code with other participants
 
-3. **Unirsi a una Chat**:
-   - Inserisci il codice ricevuto
-   - Oppure incolla con:
-     - `CTRL+V` (potrebbe non funzionare in tutti i terminali)
+3. **Join a Chat**:
+   - Enter the received code
+   - Or paste with:
+     - `CTRL+V` (may not work on all terminals)
      - `SHIFT+Insert` (standard Linux) 📋
-     - **Click destro del mouse** 🖱️
-   - Premi `ENTER` per confermare
+     - **Right mouse click** 🖱️
+   - Press `ENTER` to confirm
 
 4. **Chat**:
-   - Scrivi il messaggio e premi `ENTER` per inviare
-   - Incolla testo con `CTRL+V`, `SHIFT+Insert` o **click destro** 🖱️
-   - I messaggi sono crittografati automaticamente
-   - Usa `↑` / `↓` per scorrere i messaggi
-   - `PageUp` / `PageDown` per scroll veloce
-   - `Home` per andare all'inizio, `End` per andare alla fine
-   - Premi `ESC` per uscire dalla chat
-   - Premi `CTRL+C` per terminare il client
+   - Type your message and press `ENTER` to send
+   - Paste text with `CTRL+V`, `SHIFT+Insert` or **right click** 🖱️
+   - Messages are automatically encrypted
+   - Use `↑` / `↓` to scroll messages
+   - `PageUp` / `PageDown` for fast scrolling
+   - `Home` to go to beginning, `End` to go to end
+   - Press `ESC` to exit the chat
+   - Press `CTRL+C` to terminate the client
 
-## 🔐 Architettura di Sicurezza
+## 🔐 Security Architecture
 
-### Crittografia E2EE
+### End-to-End Encryption
 
-**Importante**: Il server non conosce mai il codice chat originale! Il client genera il codice localmente e invia al server solo un hash SHA-256 (room_id). Questo garantisce che:
-- Il server non può derivare la chiave E2EE
-- Il server serve solo da relay per i messaggi crittografati
-- Anche con accesso al database del server, i messaggi restano sicuri
+**Important**: The server never knows the original chat code! The client generates the code locally and sends only a BLAKE3+SHA3-512 hash to the server (room_id). This ensures that:
+- Server cannot derive the E2EE key
+- Server only relays encrypted messages
+- Even with server database access, messages remain secure
 
 ```
 ┌─────────┐                 ┌────────┐                 ┌─────────┐
 │ Client A│                 │ Server │                 │ Client B│
 └────┬────┘                 └───┬────┘                 └────┬────┘
      │                          │                           │
-     │  1. Genera chat_code     │                           │
-     │     localmente (256-bit) │                           │
+     │  1. Generate chat_code   │                           │
+     │     locally (512-bit)    │                           │
      │                          │                           │
-     │  2. Calcola room_id =    │                           │
-     │     SHA256(chat_code)    │                           │
+     │  2. Calculate room_id =  │                           │
+     │     BLAKE3(SHA3-512...)  │                           │
      │                          │                           │
-     │  3. Crea Chat con room_id│                           │
+     │  3. Create Chat with     │                           │
+     │     room_id              │                           │
      ├─────────────────────────>│                           │
      │                          │                           │
      │  4. Chat Created         │                           │
      │<─────────────────────────┤                           │
      │                          │                           │
-     │  5. Deriva chiave E2EE   │                           │
-     │     (HKDF-SHA256)        │                           │
-     │     dal chat_code        │                           │
+     │  5. Derive E2EE key      │                           │
+     │     (Argon2id)           │                           │
+     │     from chat_code       │                           │
      │                          │                           │
-     │  6. Condivide chat_code  │                           │
+     │  6. Share chat_code      │                           │
      │     (out-of-band)        ├──────────────────────────>│
      │                          │                           │
-     │                          │  7. Join con room_id =    │
-     │                          │     SHA256(chat_code)     │
+     │                          │  7. Join with room_id =   │
+     │                          │     BLAKE3(SHA3-512...)   │
      │                          │<──────────────────────────┤
      │                          │                           │
-     │                          │                           │  8. Deriva stessa chiave
-     │                          │                           │     (HKDF-SHA256)
+     │                          │                           │  8. Derive same key
+     │                          │                           │     (Argon2id)
      │                          │                           │
-     │  9. Messaggio plaintext  │                           │
-     │     "Ciao!"              │                           │
+     │  9. Message plaintext    │                           │
+     │     "Hello!"             │                           │
      │                          │                           │
-     │  10. Encrypt con         │                           │
-     │      ChaCha20-Poly1305   │                           │
+     │  10. Encrypt with        │                           │
+     │      XChaCha20-Poly1305  │                           │
      │                          │                           │
      │  11. Ciphertext          │                           │
      ├─────────────────────────>│                           │
      │                          │                           │
-     │                          │  12. Inoltro ciphertext   │
-     │                          │      (server non decripta!)
+     │                          │  12. Relay ciphertext    │
+     │                          │      (server can't read!) │
      │                          ├──────────────────────────>│
      │                          │                           │
-     │                          │                           │  13. Decrypt con
-     │                          │                           │      ChaCha20-Poly1305
+     │                          │                           │  13. Decrypt with own
+     │                          │                           │      key (Argon2id)
      │                          │                           │
-     │                          │                           │  14. "Ciao!"
+     │                          │                           │  14. Display "Hello!"
 ```
 
-### Derivazione Chiavi
+### Key Derivation
 
 ```rust
-chat_code (512-bit random, generato dal client) 
+chat_code (512-bit random, generated by client) 
     ↓
-room_id = BLAKE3(chat_code) → SHA3-512(blake3_hash) [doppio hash per il server]
+room_id = BLAKE3(chat_code) → SHA3-512(blake3_hash) [double hash for server]
     ↓
-chat_code (condiviso out-of-band con altri partecipanti)
+chat_code (shared out-of-band with other participants)
     ↓
 Argon2id(chat_code, memory=128MB, iterations=4, parallelism=8)
     ↓
 encryption_key (256-bit)
     ↓
-XChaCha20-Poly1305 cipher (nonce 192-bit)
+XChaCha20-Poly1305 cipher (192-bit nonce)
 ```
 
-**Sicurezza Argon2id**:
-- **Resistente a GPU**: 128 MB di memoria rende gli attacchi GPU economicamente impraticabili
-- **Resistente a ASIC**: Design memory-hard specifico contro hardware dedicato
-- **Protezione timing**: Constant-time operation per prevenire side-channel attacks
-- **Vincitore PHC**: Password Hashing Competition winner (2015)
+**Argon2id Security**:
+- **GPU-Resistant**: 128 MB memory makes GPU attacks economically impractical
+- **ASIC-Resistant**: Memory-hard design specific against dedicated hardware
+- **Timing Protection**: Constant-time operation to prevent side-channel attacks
+- **PHC Winner**: Password Hashing Competition winner (2015)
 
-### Protezione TLS 1.3
+### TLS 1.3 Protection
 
-- Tutte le connessioni client-server usano TLS 1.3
-- Protegge metadati e previene MITM
-- Il server comunque NON può leggere i messaggi (E2EE)
+- All client-server connections use TLS 1.3
+- Protects metadata and prevents MITM
+- Server still CANNOT read messages (E2EE)
 
-## 📦 Struttura del Progetto
+## 📦 Project Structure
 
 ```
 Rchat/
 ├── Cargo.toml              # Workspace root
-├── common/                 # Libreria condivisa
+├── common/                 # Shared library
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── protocol.rs     # Definizioni messaggi
-│       └── crypto.rs       # E2EE con ChaCha20-Poly1305
-├── server/                 # Server binario
+│       ├── protocol.rs     # Message type definitions
+│       └── crypto.rs       # E2EE with XChaCha20-Poly1305
+├── server/                 # Server binary
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs         # Server TLS asincrono
-│       └── chat.rs         # Gestione chat rooms
-├── client/                 # Client binario
+│       ├── main.rs         # Async TLS server
+│       └── chat.rs         # Chat room management
+├── client/                 # Client binary
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs         # Client TLS + TUI
-│       └── ui.rs           # Interfaccia Ratatui
-├── server.crt              # Certificato TLS (generato)
-├── server.key              # Chiave privata (generato)
+│       ├── main.rs         # TLS client + TUI
+│       └── ui.rs           # Ratatui interface
+├── server.crt              # TLS certificate (generated)
+├── server.key              # Private key (generated)
 └── README.md
 ```
 
-## 🛡️ Garanzie di Sicurezza
+## 🛡️ Security Guarantees
 
-✅ **E2EE completo**: Il server non può leggere i messaggi  
-✅ **Server zero-knowledge**: Il server non conosce mai il codice chat originale, solo doppio hash (BLAKE3+SHA3-512)  
-✅ **Quantum-resistant**: Codici chat 512-bit per resistenza a computer quantistici futuri  
-✅ **GPU-resistant**: Argon2id con 128MB memoria rende attacchi GPU impraticabili  
-✅ **ASIC-resistant**: Memory-hard algorithm specifico contro hardware dedicato  
+✅ **Complete E2EE**: Server cannot read messages  
+✅ **Server zero-knowledge**: Server never knows original chat code, only double hash (BLAKE3+SHA3-512)  
+✅ **Quantum-resistant**: 512-bit chat codes for resistance to future quantum computers  
+✅ **GPU-resistant**: Argon2id with 128MB memory makes GPU attacks impractical  
+✅ **ASIC-resistant**: Memory-hard algorithm specific against dedicated hardware  
 ✅ **Side-channel resistant**: Constant-time operations in Argon2id  
-✅ **Nessun logging**: I messaggi non vengono mai scritti su disco  
-✅ **RAM volatile**: Tutti i dati esistono solo in memoria  
-✅ **Zeroizzazione**: Chiavi e dati sensibili sovrascritti alla disconnessione  
-✅ **TLS 1.3**: Connessioni client-server crittografate (protegge metadati)  
-✅ **Codici sicuri**: 512-bit random con entropia da OsRng  
-✅ **AEAD**: XChaCha20-Poly1305 garantisce autenticità e confidenzialità  
-✅ **Client-side key derivation**: Chiavi derivate solo sui client, mai sul server  
-✅ **Double hashing**: BLAKE3 + SHA3-512 per room routing (nessun attacco length-extension)  
+✅ **No logging**: Messages never written to disk  
+✅ **Volatile RAM**: All data exists only in memory  
+✅ **Zeroization**: Keys and sensitive data overwritten on disconnect  
+✅ **TLS 1.3**: Encrypted client-server connections (protects metadata)  
+✅ **Secure codes**: 512-bit random with OsRng entropy  
+✅ **AEAD**: XChaCha20-Poly1305 ensures authenticity and confidentiality  
+✅ **Client-side key derivation**: Keys derived only on clients, never on server  
+✅ **Double hashing**: BLAKE3 + SHA3-512 for room routing (no length-extension attacks)  
 
-## ⚠️ Limitazioni e Disclaimer
-- **Certificati self-signed**: Sostituisci con certificati CA validi
-- **Nessuna persistenza**: I messaggi non consegnati vengono persi
-- **Solo online**: Non c'è queue per messaggi offline
-- **Rete locale consigliata**: Esporre su Internet richiede hardening
+## ⚠️ Limitations and Disclaimer
+- **Self-signed certificates**: Replace with valid CA certificates
+- **No persistence**: Undelivered messages are lost
+- **Online only**: No queue for offline messages
+- **Local network recommended**: Exposing on Internet requires hardening
 
 ## 🧪 Testing
 
-### Test Locale
+### Local Testing
 
-1. Avvia il server in un terminale:
+1. Start the server in a terminal:
    ```bash
    cargo run --bin server
    ```
 
-2. Avvia il primo client (Alice):
+2. Start first client (Alice):
    ```bash
    cargo run --bin client -- -u Alice
    ```
 
-3. Crea una chat e copia il codice generato
+3. Create a chat and copy the generated code
 
-4. Avvia il secondo client (Bob):
+4. Start second client (Bob):
    ```bash
    cargo run --bin client -- -u Bob
    ```
 
-5. Unisciti con il codice copiato
+5. Join with the copied code
 
-6. Inizia a chattare in modo sicuro! 🔒
+6. Start chatting securely! 🔒
 
-### Verifica Crittografia
+### Verify Encryption
 
-Puoi usare Wireshark per confermare che:
-- Le connessioni usano TLS 1.3
-- I payload sono completamente crittografati
-- Il server non può vedere i contenuti dei messaggi
+You can use Wireshark to confirm that:
+- Connections use TLS 1.3
+- Payloads are completely encrypted
+- Server cannot see message contents
 
-## 📚 Dipendenze Principali
+## 📚 Main Dependencies
 
-| Crate | Versione | Uso |
-|-------|----------|-----|
+| Crate | Version | Purpose |
+|-------|---------|---------|
 | tokio | 1.41 | Async runtime |
 | rustls | 0.23 | TLS 1.3 |
-| **xchacha20poly1305** | 0.10 | **E2EE AEAD cipher (192-bit nonce)** |
+| **chacha20poly1305** | 0.10 | **E2EE AEAD cipher (192-bit nonce)** |
 | **argon2** | 0.5 | **Key derivation (Argon2id, 128MB memory)** |
 | **blake3** | 1.5 | **Modern hash function** |
 | **sha3** | 0.10 | **SHA3-512 (Keccak, NIST standard)** |
@@ -332,15 +333,15 @@ Puoi usare Wireshark per confermare che:
 | serde | 1.0 | Serialization |
 | clap | 4.5 | CLI parsing |
 
-## 🤝 Contribuire
+## 🤝 Contributing
 
-Questo è un progetto educativo. Suggerimenti per migliorare la sicurezza sono benvenuti!
+This is an educational project. Security improvement suggestions are welcome!
 
-## 📄 Licenza
+## 📄 License
 
-MIT License - Vedi LICENSE file
+MIT License - See LICENSE file
 
-## 🔗 Risorse
+## 🔗 Resources
 
 - [XChaCha20-Poly1305 RFC](https://datatracker.ietf.org/doc/html/draft-arciszewski-xchacha)
 - [Argon2 RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html)
@@ -352,4 +353,4 @@ MIT License - Vedi LICENSE file
 
 ---
 
-**⚡️ Fatto con Rust 🦀 | 🔒 Military-Grade Security | 🛡️ Zero-Knowledge Server | 💾 Zero Persistence**
+**⚡️ Built with Rust 🦀 | 🔒 Military-Grade Security | 🛡️ Zero-Knowledge Server | 💾 Zero Persistence**

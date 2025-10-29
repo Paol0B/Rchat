@@ -1,77 +1,77 @@
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-/// Tipi di chat supportati
+/// Supported chat types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ChatType {
     OneToOne,
     Group { max_participants: usize },
 }
 
-/// Messaggio dal client al server
+/// Message from client to server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
-    /// Crea una nuova chat
-    /// Il client genera il chat_code localmente e invia solo il room_id al server
+    /// Create a new chat
+    /// Client generates chat_code locally and sends only room_id to server
     CreateChat {
-        room_id: String, // SHA256 hash del chat_code generato dal client
+        room_id: String, // BLAKE3+SHA3-512 hash of client-generated chat_code
         chat_type: ChatType,
         username: String,
     },
-    /// Unisciti a una chat esistente
-    /// room_id è un hash del chat_code, così il server non conosce mai il codice originale
+    /// Join an existing chat
+    /// room_id is a hash of chat_code, so server never knows the original code
     JoinChat {
-        room_id: String, // SHA256 hash del chat_code
+        room_id: String, // BLAKE3+SHA3-512 hash of chat_code
         username: String,
     },
-    /// Invia un messaggio crittografato (il server lo inoltra senza decifrarlo)
+    /// Send encrypted message (server forwards without decrypting)
     SendMessage {
-        room_id: String, // SHA256 hash del chat_code
+        room_id: String, // BLAKE3+SHA3-512 hash of chat_code
         encrypted_payload: Vec<u8>,
     },
-    /// Disconnettiti dalla chat
+    /// Disconnect from chat
     LeaveChat {
-        room_id: String, // SHA256 hash del chat_code
+        room_id: String, // BLAKE3+SHA3-512 hash of chat_code
     },
 }
 
-/// Messaggio dal server al client
+/// Message from server to client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMessage {
-    /// Chat creata con successo (il server non conosce il chat_code originale)
+    /// Chat created successfully (server never knows the original chat_code)
     ChatCreated {
-        room_id: String, // Il server conferma con il room_id
+        room_id: String, // Server confirms with room_id
         chat_type: ChatType,
     },
-    /// Join alla chat riuscito
+    /// Successfully joined chat
     JoinedChat {
         room_id: String,
         chat_type: ChatType,
         participant_count: usize,
     },
-    /// Errore
+    /// Error
     Error {
         message: String,
     },
-    /// Nuovo messaggio ricevuto (crittografato)
+    /// New message received (encrypted)
     MessageReceived {
         room_id: String,
         encrypted_payload: Vec<u8>,
         timestamp: i64,
     },
-    /// Un utente si è unito
+    /// A user joined
     UserJoined {
         room_id: String,
         username: String,
     },
-    /// Un utente ha lasciato
+    /// A user left
     UserLeft {
         room_id: String,
         username: String,
     },
 }
 
-/// Payload del messaggio prima della crittografia
+/// Message payload before encryption
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct MessagePayload {

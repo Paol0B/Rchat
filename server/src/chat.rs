@@ -63,19 +63,19 @@ pub struct ChatState {
 
 impl ChatState {
     pub fn new(_numeric_codes: bool) -> Self {
-        // Il parametro numeric_codes non è più necessario perché il client genera il codice
+        // Parameter numeric_codes no longer needed because client generates the code
         Self {
             chats: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Crea una nuova chat usando room_id (il server non conosce mai il chat_code originale)
+    /// Create a new chat using room_id (server never knows the original chat_code)
     pub async fn create_chat(&self, room_id: String, chat_type: ChatType) {
         let room = Arc::new(Mutex::new(ChatRoom::new(chat_type)));
         self.chats.lock().await.insert(room_id, room);
     }
 
-    /// Unisciti a una chat usando room_id
+    /// Join a chat using room_id
     pub async fn join_chat(
         &self,
         room_id: &str,
@@ -85,12 +85,12 @@ impl ChatState {
         let chats = self.chats.lock().await;
         let room = chats
             .get(room_id)
-            .ok_or_else(|| "Chat non trovata".to_string())?;
+            .ok_or_else(|| "Chat not found".to_string())?;
 
         let mut room = room.lock().await;
 
         if !room.can_join() {
-            return Err("Chat piena".to_string());
+            return Err("Chat is full".to_string());
         }
 
         let client_id = format!("{}_{}", username, uuid::Uuid::new_v4());
@@ -123,7 +123,7 @@ impl ChatState {
                     .unwrap()
                     .as_secs() as i64,
             };
-            // Invia a TUTTI, incluso il mittente (None = nessuna esclusione)
+            // Send to ALL, including the sender (None = no exclusion)
             room.broadcast(msg, None).await;
         }
     }

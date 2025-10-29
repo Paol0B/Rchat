@@ -40,13 +40,13 @@ fn get_clipboard_text() -> Result<String, Box<dyn std::error::Error>> {
 
 #[derive(Parser, Debug)]
 #[command(name = "Rchat Client")]
-#[command(about = "Client E2EE per Rchat", long_about = None)]
+#[command(about = "E2EE Client for Rchat", long_about = None)]
 struct Args {
-    /// Indirizzo IP del server
+    /// Server IP address
     #[arg(short, long, default_value = "127.0.0.1")]
     host: String,
 
-    /// Porta del server
+    /// Server port
     #[arg(short, long, default_value_t = 6666)]
     port: u16,
 
@@ -54,12 +54,12 @@ struct Args {
     #[arg(short, long)]
     username: String,
 
-    /// Accetta certificati self-signed (INSICURO, solo per testing!)
+    /// Accept self-signed certificates (INSECURE, testing only!)
     #[arg(long, default_value_t = false)]
     insecure: bool,
 
-    /// Usa codici numerici a 6 cifre invece di codici base64 lunghi
-    /// ATTENZIONE: Meno sicuro (20 bit vs 256 bit di entropia)
+    /// Use 6-digit numeric codes instead of long base64 codes
+    /// WARNING: Less secure (20 bit vs 512 bit entropy)
     #[arg(long, default_value_t = false)]
     numeric_codes: bool,
 }
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(s) => s,
         Err(e) => {
             cleanup_terminal(&mut terminal)?;
-            eprintln!("❌ Errore di connessione: {}", e);
+            eprintln!("❌ Connection error: {}", e);
             return Err(e.into());
         }
     };
@@ -104,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(s) => s,
         Err(e) => {
             cleanup_terminal(&mut terminal)?;
-            eprintln!("❌ Errore TLS handshake: {}", e);
+            eprintln!("❌ TLS handshake error: {}", e);
             return Err(e.into());
         }
     };
@@ -115,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cleanup_terminal(&mut terminal)?;
 
     if let Err(err) = result {
-        eprintln!("❌ Errore: {}", err);
+        eprintln!("❌ Error: {}", err);
     }
 
     Ok(())
@@ -145,8 +145,8 @@ fn configure_tls(insecure: bool) -> Result<ClientConfig, Box<dyn std::error::Err
 
     if insecure {
         // Modalità insicura: accetta qualsiasi certificato (solo per testing!)
-        eprintln!("⚠️  MODALITÀ INSICURA: Accettazione di certificati self-signed");
-        eprintln!("⚠️  NON usare in produzione!");
+        eprintln!("⚠️  INSECURE MODE: Accepting self-signed certificates");
+        eprintln!("⚠️  DO NOT use in production!");
         
         use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
         use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -223,10 +223,10 @@ fn configure_tls(insecure: bool) -> Result<ClientConfig, Box<dyn std::error::Err
             root_store.add(cert)?;
         }
         
-        eprintln!("✅ Certificato server caricato da {}", cert_path);
+        eprintln!("✅ Server certificate loaded from {}", cert_path);
     } else {
-        eprintln!("⚠️  Certificato server non trovato in {}", cert_path);
-        eprintln!("⚠️  Usa --insecure per accettare certificati self-signed");
+        eprintln!("⚠️  Server certificate not found at {}", cert_path);
+        eprintln!("⚠️  Use --insecure to accept self-signed certificates");
         return Err("Certificato server mancante. Usa --insecure per testing.".into());
     }
 
@@ -526,20 +526,20 @@ where
                     room_id: _,
                     chat_type: _,
                 } => {
-                    // Usa il chat_code generato localmente
+                    // Use locally generated chat_code
                     if let Some(chat_code) = app.pending_chat_code.take() {
-                        // Copia il codice nella clipboard
+                        // Copy code to clipboard
                         if let Err(e) = copy_to_clipboard(&chat_code) {
-                            app.status_message = format!("Chat creata! Codice: {} (copia manuale)", chat_code);
-                            eprintln!("⚠️  Impossibile copiare in clipboard: {}", e);
+                            app.status_message = format!("Chat created! Code: {} (manual copy)", chat_code);
+                            eprintln!("⚠️  Cannot copy to clipboard: {}", e);
                         } else {
-                            app.status_message = format!("✅ Chat creata! Codice copiato in clipboard: {}", &chat_code[..16.min(chat_code.len())]);
+                            app.status_message = format!("✅ Chat created! Code copied to clipboard: {}", &chat_code[..16.min(chat_code.len())]);
                         }
                         
                         app.current_chat_code = Some(chat_code.clone());
                         app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
                         app.mode = AppMode::Chat;
-                        app.scroll_to_bottom(); // Auto-scroll alla fine quando si entra
+                        app.scroll_to_bottom(); // Auto-scroll on enter
                     }
                 }
                 ServerMessage::JoinedChat {
@@ -547,21 +547,21 @@ where
                     chat_type: _,
                     participant_count,
                 } => {
-                    // Usa il chat_code dall'input dell'utente
+                    // Use chat_code from user input
                     let chat_code = app.input.clone();
                     app.input.clear();
                     
                     app.current_chat_code = Some(chat_code.clone());
                     app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
                     app.mode = AppMode::Chat;
-                    app.scroll_to_bottom(); // Auto-scroll alla fine quando si entra
+                    app.scroll_to_bottom(); // Auto-scroll on enter
                     app.status_message = format!(
-                        "Entrato nella chat! Partecipanti: {}",
+                        "Joined chat! Participants: {}",
                         participant_count
                     );
                 }
                 ServerMessage::Error { message } => {
-                    app.status_message = format!("Errore: {}", message);
+                    app.status_message = format!("Error: {}", message);
                     app.mode = AppMode::Welcome;
                 }
                 ServerMessage::MessageReceived {
@@ -584,10 +584,10 @@ where
                     }
                 }
                 ServerMessage::UserJoined { username, .. } => {
-                    app.status_message = format!("{} si è unito", username);
+                    app.status_message = format!("{} joined the chat", username);
                 }
                 ServerMessage::UserLeft { username, .. } => {
-                    app.status_message = format!("{} ha lasciato", username);
+                    app.status_message = format!("{} left the chat", username);
                 }
             }
         }
