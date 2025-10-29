@@ -1,5 +1,5 @@
 use clap::Parser;
-use common::{ChatKey, ChatType, ClientMessage, MessagePayload, ServerMessage};
+use common::{ChatKey, ChatType, ClientMessage, MessagePayload, ServerMessage, chat_code_to_room_id, generate_chat_code, generate_numeric_chat_code};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
@@ -57,6 +57,11 @@ struct Args {
     /// Accetta certificati self-signed (INSICURO, solo per testing!)
     #[arg(long, default_value_t = false)]
     insecure: bool,
+
+    /// Usa codici numerici a 6 cifre invece di codici base64 lunghi
+    /// ATTENZIONE: Meno sicuro (20 bit vs 256 bit di entropia)
+    #[arg(long, default_value_t = false)]
+    numeric_codes: bool,
 }
 
 #[tokio::main]
@@ -104,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let app = App::new(args.username.clone());
+    let app = App::new(args.username.clone(), args.numeric_codes);
     let result = run_app(&mut terminal, app, stream).await;
 
     cleanup_terminal(&mut terminal)?;
@@ -333,7 +338,19 @@ where
                     },
                     AppMode::CreateChat => match key.code {
                         KeyCode::Char('1') => {
+                            // Genera il codice chat localmente
+                            let chat_code = if app.numeric_codes {
+                                generate_numeric_chat_code()
+                            } else {
+                                generate_chat_code()
+                            };
+                            let room_id = chat_code_to_room_id(&chat_code);
+                            
+                            // Salva il chat_code per usarlo dopo
+                            app.pending_chat_code = Some(chat_code);
+                            
                             tx.send(ClientMessage::CreateChat {
+                                room_id,
                                 chat_type: ChatType::OneToOne,
                                 username: app.username.clone(),
                             })
@@ -341,7 +358,19 @@ where
                             app.mode = AppMode::WaitingForChatCode;
                         }
                         KeyCode::Char('2') => {
+                            // Genera il codice chat localmente
+                            let chat_code = if app.numeric_codes {
+                                generate_numeric_chat_code()
+                            } else {
+                                generate_chat_code()
+                            };
+                            let room_id = chat_code_to_room_id(&chat_code);
+                            
+                            // Salva il chat_code per usarlo dopo
+                            app.pending_chat_code = Some(chat_code);
+                            
                             tx.send(ClientMessage::CreateChat {
+                                room_id,
                                 chat_type: ChatType::Group {
                                     max_participants: 8,
                                 },
@@ -391,9 +420,10 @@ where
                         }
                         KeyCode::Enter => {
                             let chat_code = app.input.clone();
-                            app.input.clear();
+                            let room_id = chat_code_to_room_id(&chat_code);
+                            // NON pulire app.input qui - lo useremo dopo per derivare la chiave
                             tx.send(ClientMessage::JoinChat {
-                                chat_code,
+                                room_id,
                                 username: app.username.clone(),
                             })
                             .await?;
@@ -450,12 +480,13 @@ where
                                 // Cripta il messaggio
                                 if let Some(ref chat_code) = app.current_chat_code {
                                     if let Some(ref key) = app.chat_key {
+                                        let room_id = chat_code_to_room_id(chat_code);
                                         let payload =
                                             MessagePayload::new(app.username.clone(), content);
                                         if let Ok(serialized) = bincode::serialize(&payload) {
                                             if let Ok(encrypted) = key.encrypt(&serialized) {
                                                 tx.send(ClientMessage::SendMessage {
-                                                    chat_code: chat_code.clone(),
+                                                    room_id,
                                                     encrypted_payload: encrypted,
                                                 })
                                                 .await?;
@@ -470,8 +501,9 @@ where
                         }
                         KeyCode::Esc => {
                             if let Some(ref chat_code) = app.current_chat_code {
+                                let room_id = chat_code_to_room_id(chat_code);
                                 tx.send(ClientMessage::LeaveChat {
-                                    chat_code: chat_code.clone(),
+                                    room_id,
                                 })
                                 .await?;
                             }
@@ -491,29 +523,38 @@ where
         while let Ok(msg) = server_rx.try_recv() {
             match msg {
                 ServerMessage::ChatCreated {
-                    chat_code,
+                    room_id: _,
                     chat_type: _,
                 } => {
-                    // Copia il codice nella clipboard
-                    if let Err(e) = copy_to_clipboard(&chat_code) {
-                        app.status_message = format!("Chat creata! Codice: {} (copia manuale)", chat_code);
-                        eprintln!("⚠️  Impossibile copiare in clipboard: {}", e);
-                    } else {
-                        app.status_message = format!("✅ Chat creata! Codice copiato in clipboard: {}", &chat_code[..16.min(chat_code.len())]);
+                    // Usa il chat_code generato localmente
+                    if let Some(chat_code) = app.pending_chat_code.take() {
+                        // Copia il codice nella clipboard
+                        if let Err(e) = copy_to_clipboard(&chat_code) {
+                            app.status_message = format!("Chat creata! Codice: {} (copia manuale)", chat_code);
+                            eprintln!("⚠️  Impossibile copiare in clipboard: {}", e);
+                        } else {
+                            app.status_message = format!("✅ Chat creata! Codice copiato in clipboard: {}", &chat_code[..16.min(chat_code.len())]);
+                        }
+                        
+                        app.current_chat_code = Some(chat_code.clone());
+                        app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
+                        app.mode = AppMode::Chat;
+                        app.scroll_to_bottom(); // Auto-scroll alla fine quando si entra
                     }
+                }
+                ServerMessage::JoinedChat {
+                    room_id: _,
+                    chat_type: _,
+                    participant_count,
+                } => {
+                    // Usa il chat_code dall'input dell'utente
+                    let chat_code = app.input.clone();
+                    app.input.clear();
                     
                     app.current_chat_code = Some(chat_code.clone());
                     app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
                     app.mode = AppMode::Chat;
-                }
-                ServerMessage::JoinedChat {
-                    chat_code,
-                    chat_type: _,
-                    participant_count,
-                } => {
-                    app.current_chat_code = Some(chat_code.clone());
-                    app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
-                    app.mode = AppMode::Chat;
+                    app.scroll_to_bottom(); // Auto-scroll alla fine quando si entra
                     app.status_message = format!(
                         "Entrato nella chat! Partecipanti: {}",
                         participant_count

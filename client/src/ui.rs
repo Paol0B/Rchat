@@ -28,40 +28,47 @@ pub struct App {
     pub mode: AppMode,
     pub input: String,
     pub current_chat_code: Option<String>,
+    pub pending_chat_code: Option<String>, // Codice chat generato localmente in attesa di conferma
     pub chat_key: Option<ChatKey>,
     pub messages: Vec<ChatMessage>,
     pub status_message: String,
     pub scroll_offset: usize,
+    pub numeric_codes: bool, // Usa codici numerici invece di base64
 }
 
 impl App {
-    pub fn new(username: String) -> Self {
+    pub fn new(username: String, numeric_codes: bool) -> Self {
         Self {
             username,
             mode: AppMode::Welcome,
             input: String::new(),
             current_chat_code: None,
+            pending_chat_code: None,
             chat_key: None,
             messages: Vec::new(),
             status_message: String::new(),
             scroll_offset: 0,
+            numeric_codes,
         }
     }
 
     pub fn scroll_up(&mut self) {
-        if self.scroll_offset > 0 {
-            self.scroll_offset -= 1;
-        }
-    }
-
-    pub fn scroll_down(&mut self) {
+        // Scroll up = aumenta offset = vai verso i messaggi più vecchi
         if !self.messages.is_empty() {
             self.scroll_offset = self.scroll_offset.saturating_add(1);
         }
     }
 
+    pub fn scroll_down(&mut self) {
+        // Scroll down = diminuisci offset = vai verso i messaggi più recenti
+        if self.scroll_offset > 0 {
+            self.scroll_offset -= 1;
+        }
+    }
+
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = self.messages.len().saturating_sub(1);
+        // Bottom = offset 0 = mostra gli ultimi messaggi
+        self.scroll_offset = 0;
     }
 }
 
@@ -239,10 +246,15 @@ fn draw_chat(f: &mut Frame, app: &App) {
     let total_messages = app.messages.len();
     
     // Calcola l'offset di visualizzazione
+    // scroll_offset = 0 significa mostra gli ultimi messaggi (bottom)
+    // scroll_offset > 0 significa scroll up verso i messaggi più vecchi
     let start_idx = if total_messages > message_area_height {
-        // Se ci sono più messaggi dell'area, mostra gli ultimi
-        total_messages.saturating_sub(message_area_height).saturating_sub(app.scroll_offset)
+        // Se ci sono più messaggi dell'area disponibile
+        let max_offset = total_messages.saturating_sub(message_area_height);
+        let actual_offset = app.scroll_offset.min(max_offset);
+        max_offset.saturating_sub(actual_offset)
     } else {
+        // Se ci sono meno messaggi, mostra tutti dall'inizio
         0
     };
     
@@ -260,8 +272,8 @@ fn draw_chat(f: &mut Frame, app: &App) {
         })
         .collect();
 
-    let scroll_indicator = if total_messages > message_area_height {
-        format!(" ({}/{})", start_idx + 1, total_messages.saturating_sub(message_area_height))
+    let scroll_indicator = if total_messages > message_area_height && app.scroll_offset > 0 {
+        format!(" (↑ {} messaggi più vecchi)", app.scroll_offset)
     } else {
         String::new()
     };

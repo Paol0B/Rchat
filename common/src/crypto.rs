@@ -4,7 +4,7 @@ use chacha20poly1305::{
 };
 use hkdf::Hkdf;
 use rand::RngCore;
-use sha2::Sha256;
+use sha2::{Sha256, Digest};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
@@ -21,6 +21,16 @@ pub fn generate_numeric_chat_code() -> String {
     use rand::Rng;
     let code = rand::thread_rng().gen_range(100000..=999999);
     format!("{:06}", code)
+}
+
+/// Genera un identificatore di chat che il server può usare senza conoscere il codice originale
+/// Il server usa questo hash per identificare la chat, ma non può derivare la chiave E2EE
+pub fn chat_code_to_room_id(chat_code: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"rchat-room-id-v1:");
+    hasher.update(chat_code.as_bytes());
+    let hash = hasher.finalize();
+    URL_SAFE_NO_PAD.encode(hash)
 }
 
 /// Deriva una chiave di crittografia dal codice della chat usando HKDF

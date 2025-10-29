@@ -12,37 +12,40 @@ pub enum ChatType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
     /// Crea una nuova chat
+    /// Il client genera il chat_code localmente e invia solo il room_id al server
     CreateChat {
+        room_id: String, // SHA256 hash del chat_code generato dal client
         chat_type: ChatType,
         username: String,
     },
     /// Unisciti a una chat esistente
+    /// room_id è un hash del chat_code, così il server non conosce mai il codice originale
     JoinChat {
-        chat_code: String,
+        room_id: String, // SHA256 hash del chat_code
         username: String,
     },
     /// Invia un messaggio crittografato (il server lo inoltra senza decifrarlo)
     SendMessage {
-        chat_code: String,
+        room_id: String, // SHA256 hash del chat_code
         encrypted_payload: Vec<u8>,
     },
     /// Disconnettiti dalla chat
     LeaveChat {
-        chat_code: String,
+        room_id: String, // SHA256 hash del chat_code
     },
 }
 
 /// Messaggio dal server al client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMessage {
-    /// Chat creata con successo
+    /// Chat creata con successo (il server non conosce il chat_code originale)
     ChatCreated {
-        chat_code: String,
+        room_id: String, // Il server conferma con il room_id
         chat_type: ChatType,
     },
     /// Join alla chat riuscito
     JoinedChat {
-        chat_code: String,
+        room_id: String,
         chat_type: ChatType,
         participant_count: usize,
     },
@@ -52,18 +55,18 @@ pub enum ServerMessage {
     },
     /// Nuovo messaggio ricevuto (crittografato)
     MessageReceived {
-        chat_code: String,
+        room_id: String,
         encrypted_payload: Vec<u8>,
         timestamp: i64,
     },
     /// Un utente si è unito
     UserJoined {
-        chat_code: String,
+        room_id: String,
         username: String,
     },
     /// Un utente ha lasciato
     UserLeft {
-        chat_code: String,
+        room_id: String,
         username: String,
     },
 }

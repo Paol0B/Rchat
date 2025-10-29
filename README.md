@@ -72,36 +72,36 @@ cargo build --release
 
 ### Avvia il Server
 
-**Server standard (codici base64 completi - più sicuro):**
 ```bash
 cargo run --bin server --release
 ```
 
-**Server con codici numerici a 6 cifre (più semplice da condividere):**
-```bash
-cargo run --bin server --release -- --numeric-codes
-```
-
-⚠️ **ATTENZIONE**: I codici numerici hanno solo ~20 bit di entropia (1 milione di combinazioni) rispetto ai 256 bit dei codici completi. Sono più facili da digitare ma meno sicuri contro attacchi brute-force.
+Il server si avvia e attende connessioni. Non ha bisogno di sapere se i client useranno codici numerici o base64.
 
 Parametri del server:
 - `--host`: Indirizzo di bind (default: 0.0.0.0)
 - `--port`: Porta del server (default: 6666)
-- `--numeric-codes`: Usa codici a 6 cifre invece di base64 lunghi
-
-Il server si avvia e attende connessioni.
 
 ### Avvia il Client
 
+**Client standard (codici base64 completi - più sicuro):**
 ```bash
 cargo run --bin client --release -- --host 127.0.0.1 --port 6666 --username Alice
 ```
 
-Parametri:
+**Client con codici numerici a 6 cifre (più semplice da condividere):**
+```bash
+cargo run --bin client --release -- --host 127.0.0.1 --port 6666 --username Alice --numeric-codes
+```
+
+⚠️ **ATTENZIONE**: I codici numerici hanno solo ~20 bit di entropia (1 milione di combinazioni) rispetto ai 256 bit dei codici completi. Sono più facili da digitare ma meno sicuri contro attacchi brute-force.
+
+Parametri del client:
 - `--host`: Indirizzo IP del server (default: 127.0.0.1)
 - `--port`: Porta del server (default: 6666)
 - `--username`: Il tuo nome utente (richiesto)
 - `--insecure`: Accetta certificati self-signed (⚠️ SOLO per testing!)
+- `--numeric-codes`: Genera codici a 6 cifre invece di base64 (più facili da condividere)
 
 **Per testing locale con certificati self-signed:**
 
@@ -122,7 +122,7 @@ cargo run --bin client --release -- --username Alice --insecure
    - Scegli tipo: `1` per 1:1, `2` per gruppo
    - Il sistema genera un codice univoco:
      - Formato standard: `xJ4k9L2m...` (base64, 43 caratteri)
-     - Formato numerico: `123456` (6 cifre) - solo se server avviato con `--numeric-codes`
+     - Formato numerico: `123456` (6 cifre) - solo se client avviato con `--numeric-codes`
    - **Il codice viene copiato automaticamente nella clipboard!** 📋
    - Condividi il codice con gli altri partecipanti
 
@@ -148,51 +148,69 @@ cargo run --bin client --release -- --username Alice --insecure
 
 ### Crittografia E2EE
 
+**Importante**: Il server non conosce mai il codice chat originale! Il client genera il codice localmente e invia al server solo un hash SHA-256 (room_id). Questo garantisce che:
+- Il server non può derivare la chiave E2EE
+- Il server serve solo da relay per i messaggi crittografati
+- Anche con accesso al database del server, i messaggi restano sicuri
+
 ```
 ┌─────────┐                 ┌────────┐                 ┌─────────┐
 │ Client A│                 │ Server │                 │ Client B│
 └────┬────┘                 └───┬────┘                 └────┬────┘
      │                          │                           │
-     │  1. Crea Chat            │                           │
+     │  1. Genera chat_code     │                           │
+     │     localmente (256-bit) │                           │
+     │                          │                           │
+     │  2. Calcola room_id =    │                           │
+     │     SHA256(chat_code)    │                           │
+     │                          │                           │
+     │  3. Crea Chat con room_id│                           │
      ├─────────────────────────>│                           │
      │                          │                           │
-     │  2. Chat Code (256-bit)  │                           │
+     │  4. Chat Created         │                           │
      │<─────────────────────────┤                           │
      │                          │                           │
-     │  3. Deriva chiave E2EE   │                           │
+     │  5. Deriva chiave E2EE   │                           │
      │     (HKDF-SHA256)        │                           │
+     │     dal chat_code        │                           │
      │                          │                           │
-     │                          │  4. Join con code         │
+     │  6. Condivide chat_code  │                           │
+     │     (out-of-band)        ├──────────────────────────>│
+     │                          │                           │
+     │                          │  7. Join con room_id =    │
+     │                          │     SHA256(chat_code)     │
      │                          │<──────────────────────────┤
      │                          │                           │
-     │                          │                           │  5. Deriva stessa chiave
+     │                          │                           │  8. Deriva stessa chiave
      │                          │                           │     (HKDF-SHA256)
      │                          │                           │
-     │  6. Messaggio plaintext  │                           │
+     │  9. Messaggio plaintext  │                           │
      │     "Ciao!"              │                           │
      │                          │                           │
-     │  7. Encrypt con          │                           │
-     │     ChaCha20-Poly1305    │                           │
+     │  10. Encrypt con         │                           │
+     │      ChaCha20-Poly1305   │                           │
      │                          │                           │
-     │  8. Ciphertext           │                           │
+     │  11. Ciphertext          │                           │
      ├─────────────────────────>│                           │
      │                          │                           │
-     │                          │  9. Inoltro ciphertext    │
-     │                          │     (server non decripta!)│
+     │                          │  12. Inoltro ciphertext   │
+     │                          │      (server non decripta!)
      │                          ├──────────────────────────>│
      │                          │                           │
-     │                          │                           │  10. Decrypt con
+     │                          │                           │  13. Decrypt con
      │                          │                           │      ChaCha20-Poly1305
      │                          │                           │
-     │                          │                           │  11. "Ciao!"
+     │                          │                           │  14. "Ciao!"
 ```
 
 ### Derivazione Chiavi
 
 ```rust
-chat_code (256-bit random) 
+chat_code (256-bit random, generato dal client) 
     ↓
-base64url encoding
+room_id = SHA256("rchat-room-id-v1:" + chat_code) [solo per il server]
+    ↓
+chat_code (condiviso out-of-band con altri partecipanti)
     ↓
 HKDF-SHA256(chat_code, salt=None, info="rchat-e2ee-v1")
     ↓
@@ -236,12 +254,15 @@ Rchat/
 ## 🛡️ Garanzie di Sicurezza
 
 ✅ **E2EE completo**: Il server non può leggere i messaggi  
+✅ **Server zero-knowledge**: Il server non conosce mai il codice chat originale, solo un hash SHA-256  
 ✅ **Nessun logging**: I messaggi non vengono mai scritti su disco  
 ✅ **RAM volatile**: Tutti i dati esistono solo in memoria  
 ✅ **Zeroizzazione**: Chiavi e dati sensibili sovrascritti alla disconnessione  
-✅ **TLS 1.3**: Connessioni client-server crittografate  
+✅ **TLS 1.3**: Connessioni client-server crittografate (protegge metadati)  
 ✅ **Codici sicuri**: 256-bit random con entropia da OsRng  
 ✅ **AEAD**: ChaCha20-Poly1305 garantisce autenticità e confidenzialità  
+✅ **Client-side key derivation**: Chiavi derivate solo sui client, mai sul server  
+✅ **Hash-based room routing**: Il server usa solo SHA-256(chat_code) per routing  
 
 ## ⚠️ Limitazioni e Disclaimer
 

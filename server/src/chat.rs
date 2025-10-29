@@ -59,39 +59,32 @@ impl Drop for ChatRoom {
 /// Stato globale del server
 pub struct ChatState {
     chats: Arc<Mutex<HashMap<String, Arc<Mutex<ChatRoom>>>>>,
-    numeric_codes: bool,
 }
 
 impl ChatState {
-    pub fn new(numeric_codes: bool) -> Self {
+    pub fn new(_numeric_codes: bool) -> Self {
+        // Il parametro numeric_codes non è più necessario perché il client genera il codice
         Self {
             chats: Arc::new(Mutex::new(HashMap::new())),
-            numeric_codes,
         }
     }
 
-    pub fn generate_chat_code(&self) -> String {
-        if self.numeric_codes {
-            common::generate_numeric_chat_code()
-        } else {
-            common::generate_chat_code()
-        }
-    }
-
-    pub async fn create_chat(&self, chat_code: String, chat_type: ChatType) {
+    /// Crea una nuova chat usando room_id (il server non conosce mai il chat_code originale)
+    pub async fn create_chat(&self, room_id: String, chat_type: ChatType) {
         let room = Arc::new(Mutex::new(ChatRoom::new(chat_type)));
-        self.chats.lock().await.insert(chat_code, room);
+        self.chats.lock().await.insert(room_id, room);
     }
 
+    /// Unisciti a una chat usando room_id
     pub async fn join_chat(
         &self,
-        chat_code: &str,
+        room_id: &str,
         username: String,
         sender: mpsc::Sender<ServerMessage>,
     ) -> Result<(ChatType, usize), String> {
         let chats = self.chats.lock().await;
         let room = chats
-            .get(chat_code)
+            .get(room_id)
             .ok_or_else(|| "Chat non trovata".to_string())?;
 
         let mut room = room.lock().await;
@@ -106,24 +99,24 @@ impl ChatState {
         Ok((room.chat_type.clone(), room.participants.len()))
     }
 
-    pub async fn leave_chat(&self, chat_code: &str, client_id: &str) -> Option<String> {
+    pub async fn leave_chat(&self, room_id: &str, client_id: &str) -> Option<String> {
         let chats = self.chats.lock().await;
-        let room = chats.get(chat_code)?;
+        let room = chats.get(room_id)?;
         let mut room = room.lock().await;
         room.remove_participant(client_id)
     }
 
     pub async fn broadcast_message(
         &self,
-        chat_code: &str,
+        room_id: &str,
         encrypted_payload: Vec<u8>,
         _sender_id: &str,
     ) {
         let chats = self.chats.lock().await;
-        if let Some(room) = chats.get(chat_code) {
+        if let Some(room) = chats.get(room_id) {
             let room = room.lock().await;
             let msg = ServerMessage::MessageReceived {
-                chat_code: chat_code.to_string(),
+                room_id: room_id.to_string(),
                 encrypted_payload,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -135,18 +128,18 @@ impl ChatState {
         }
     }
 
-    pub async fn broadcast_user_event(&self, chat_code: &str, username: String, joined: bool) {
+    pub async fn broadcast_user_event(&self, room_id: &str, username: String, joined: bool) {
         let chats = self.chats.lock().await;
-        if let Some(room) = chats.get(chat_code) {
+        if let Some(room) = chats.get(room_id) {
             let room = room.lock().await;
             let msg = if joined {
                 ServerMessage::UserJoined {
-                    chat_code: chat_code.to_string(),
+                    room_id: room_id.to_string(),
                     username,
                 }
             } else {
                 ServerMessage::UserLeft {
-                    chat_code: chat_code.to_string(),
+                    room_id: room_id.to_string(),
                     username,
                 }
             };

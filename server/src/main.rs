@@ -23,11 +23,6 @@ struct Args {
     /// Host del server
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
-
-    /// Usa codici numerici a 6 cifre invece di codici base64 lunghi
-    /// ATTENZIONE: Meno sicuro (20 bit vs 256 bit di entropia)
-    #[arg(long, default_value_t = false)]
-    numeric_codes: bool,
 }
 
 #[tokio::main]
@@ -36,13 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🔒 Rchat Server v0.1.0");
     println!("🚀 Avvio server su {}:{}...", args.host, args.port);
-    if args.numeric_codes {
-        println!("🔢 Modalità codici numerici attiva (6 cifre)");
-        println!("⚠️  ATTENZIONE: Sicurezza ridotta rispetto ai codici completi!");
-    }
 
     // Stato globale del server
-    let state = Arc::new(ChatState::new(args.numeric_codes));
+    let state = Arc::new(ChatState::new(false)); // Il parametro non è più usato
 
     // Configura TLS
     let tls_acceptor = configure_tls()?;
@@ -132,34 +123,36 @@ async fn handle_client(
         // Gestisci il messaggio
         match msg {
             ClientMessage::CreateChat {
+                room_id,
                 chat_type,
                 username,
             } => {
-                let chat_code = state.generate_chat_code();
-                state.create_chat(chat_code.clone(), chat_type.clone()).await;
-                let _ = state.join_chat(&chat_code, username.clone(), tx.clone()).await;
+                // Il client ha generato il chat_code localmente e ci invia solo il room_id (hash)
+                // Il server non conosce mai il chat_code originale
+                state.create_chat(room_id.clone(), chat_type.clone()).await;
+                let _ = state.join_chat(&room_id, username.clone(), tx.clone()).await;
 
-                current_chat = Some(chat_code.clone());
+                current_chat = Some(room_id.clone());
 
                 let _ = tx
                     .send(ServerMessage::ChatCreated {
-                        chat_code,
+                        room_id,
                         chat_type,
                     })
                     .await;
             }
 
             ClientMessage::JoinChat {
-                chat_code,
+                room_id,
                 username,
             } => {
-                match state.join_chat(&chat_code, username.clone(), tx.clone()).await {
+                match state.join_chat(&room_id, username.clone(), tx.clone()).await {
                     Ok((chat_type, count)) => {
-                        current_chat = Some(chat_code.clone());
+                        current_chat = Some(room_id.clone());
 
                         let _ = tx
                             .send(ServerMessage::JoinedChat {
-                                chat_code: chat_code.clone(),
+                                room_id: room_id.clone(),
                                 chat_type,
                                 participant_count: count,
                             })
@@ -167,7 +160,7 @@ async fn handle_client(
 
                         // Notifica gli altri partecipanti
                         state
-                            .broadcast_user_event(&chat_code, username, true)
+                            .broadcast_user_event(&room_id, username, true)
                             .await;
                     }
                     Err(e) => {
@@ -177,19 +170,19 @@ async fn handle_client(
             }
 
             ClientMessage::SendMessage {
-                chat_code,
+                room_id,
                 encrypted_payload,
             } => {
                 // Il server NON decripta, inoltra solo
                 state
-                    .broadcast_message(&chat_code, encrypted_payload, &client_id)
+                    .broadcast_message(&room_id, encrypted_payload, &client_id)
                     .await;
             }
 
-            ClientMessage::LeaveChat { chat_code } => {
-                if let Some(username) = state.leave_chat(&chat_code, &client_id).await {
+            ClientMessage::LeaveChat { room_id } => {
+                if let Some(username) = state.leave_chat(&room_id, &client_id).await {
                     state
-                        .broadcast_user_event(&chat_code, username, false)
+                        .broadcast_user_event(&room_id, username, false)
                         .await;
                 }
                 current_chat = None;
@@ -198,9 +191,9 @@ async fn handle_client(
     }
 
     // Cleanup alla disconnessione
-    if let Some(chat_code) = current_chat {
-        if let Some(username) = state.leave_chat(&chat_code, &client_id).await {
-            state.broadcast_user_event(&chat_code, username, false).await;
+    if let Some(room_id) = current_chat {
+        if let Some(username) = state.leave_chat(&room_id, &client_id).await {
+            state.broadcast_user_event(&room_id, username, false).await;
         }
     }
 
