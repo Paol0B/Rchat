@@ -28,6 +28,7 @@ pub enum ClientMessage {
     SendMessage {
         room_id: String, // BLAKE3+SHA3-512 hash of chat_code
         encrypted_payload: Vec<u8>,
+        message_id: String, // Unique ID for ACK tracking
     },
     /// Disconnect from chat
     LeaveChat {
@@ -58,6 +59,11 @@ pub enum ServerMessage {
         room_id: String,
         encrypted_payload: Vec<u8>,
         timestamp: i64,
+        message_id: String, // ID for deduplication
+    },
+    /// Message acknowledgment
+    MessageAck {
+        message_id: String, // Confirms message was received by server
     },
     /// A user joined
     UserJoined {

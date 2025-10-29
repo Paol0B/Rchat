@@ -292,6 +292,76 @@ where
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
 
+        // Check for pending messages that need retry
+        let now = std::time::Instant::now();
+        let mut messages_to_retry = Vec::new();
+        
+        app.pending_messages.retain(|pm| {
+            let elapsed = now.duration_since(pm.sent_at).as_secs();
+            if elapsed >= 2 {
+                // Timeout - retry if under max retries
+                if pm.retry_count < 3 {
+                    messages_to_retry.push(pm.clone());
+                    false // Remove from pending (will be re-added after retry)
+                } else {
+                    // Max retries reached - mark as failed
+                    for msg in app.messages.iter_mut().rev() {
+                        if let Some(ref msg_id) = msg.message_id {
+                            if msg_id == &pm.message_id {
+                                // Keep as not sent (red)
+                                app.status_message = format!("⚠️  Message failed after {} retries", pm.retry_count);
+                                break;
+                            }
+                        }
+                    }
+                    false // Remove from pending
+                }
+            } else {
+                true // Keep in pending
+            }
+        });
+        
+        // Retry messages
+        for mut pm in messages_to_retry {
+            pm.retry_count += 1;
+            pm.sent_at = now;
+            
+            if tx.send(ClientMessage::SendMessage {
+                room_id: pm.room_id.clone(),
+                encrypted_payload: pm.encrypted_payload.clone(),
+                message_id: pm.message_id.clone(),
+            }).await.is_ok() {
+                app.pending_messages.push(pm);
+            }
+        }
+
+        // Check auto-close countdown
+        if let Some(left_at) = app.user_left_at {
+            let elapsed = left_at.elapsed().as_secs();
+            if elapsed >= 5 {
+                // Time's up - close chat and return to welcome
+                if let Some(ref chat_code) = app.current_chat_code {
+                    let room_id = chat_code_to_room_id(chat_code);
+                    let _ = tx.send(ClientMessage::LeaveChat { room_id }).await;
+                }
+                app.mode = AppMode::Welcome;
+                app.current_chat_code = None;
+                app.chat_key = None;
+                app.chain_key = None;
+                app.messages.clear();
+                app.user_left_at = None;
+                app.closing_in_seconds = None;
+                app.status_message = "Chat closed - other user left".to_string();
+            } else {
+                // Update countdown
+                let remaining = 5 - elapsed;
+                if app.closing_in_seconds != Some(remaining as u8) {
+                    app.closing_in_seconds = Some(remaining as u8);
+                    app.status_message = format!("⚠️  Other user left - Closing in {} seconds...", remaining);
+                }
+            }
+        }
+
         // Gestisci eventi (tastiera e mouse)
         if event::poll(std::time::Duration::from_millis(100))? {
             let evt = event::read()?;
@@ -497,6 +567,16 @@ where
                                             let signature = app.identity_key.sign(&sig_data);
                                             let public_key = app.identity_key.public_key_bytes();
                                             
+                                            // Generate unique message ID
+                                            let message_id = format!("{}-{}-{}", 
+                                                app.username, 
+                                                app.sequence_number,
+                                                std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap()
+                                                    .as_nanos()
+                                            );
+                                            
                                             let payload = MessagePayload::new(
                                                 app.username.clone(),
                                                 content.clone(),
@@ -506,7 +586,8 @@ where
                                                 chain_index,
                                             );
                                             
-                                            // Add our own message to the UI immediately (verified since it's ours)
+                                            // Add our own message to the UI immediately
+                                            // Mark as not sent initially, will be confirmed when we get ACK
                                             app.messages.push(ChatMessage {
                                                 username: app.username.clone(),
                                                 content: content.clone(),
@@ -515,18 +596,38 @@ where
                                                     .unwrap()
                                                     .as_secs() as i64,
                                                 verified: true, // Our own messages are always verified
+                                                sent: false,    // Will be set to true when we get ACK
+                                                message_id: Some(message_id.clone()),
                                             });
                                             
                                             app.sequence_number += 1;
                                             
+                                            // Try to send the message
                                             if let Ok(serialized) = bincode::serialize(&payload) {
                                                 if let Ok(encrypted) = key.encrypt_with_chain(&serialized, &message_key) {
-                                                    tx.send(ClientMessage::SendMessage {
+                                                    // Add to pending messages for retry logic
+                                                    app.pending_messages.push(PendingMessage {
+                                                        message_id: message_id.clone(),
+                                                        room_id: room_id.clone(),
+                                                        encrypted_payload: encrypted.clone(),
+                                                        sent_at: std::time::Instant::now(),
+                                                        retry_count: 0,
+                                                    });
+                                                    
+                                                    if tx.send(ClientMessage::SendMessage {
                                                         room_id,
                                                         encrypted_payload: encrypted,
+                                                        message_id,
                                                     })
-                                                    .await?;
+                                                    .await.is_err() {
+                                                        app.status_message = "⚠️  Failed to send message".to_string();
+                                                    }
+                                                    // Don't mark as sent here - wait for server echo to confirm
+                                                } else {
+                                                    app.status_message = "⚠️  Failed to encrypt message".to_string();
                                                 }
+                                            } else {
+                                                app.status_message = "⚠️  Failed to serialize message".to_string();
                                             }
                                         }
                                     }
@@ -544,7 +645,10 @@ where
                             app.mode = AppMode::Welcome;
                             app.current_chat_code = None;
                             app.chat_key = None;
+                            app.chain_key = None;
                             app.messages.clear();
+                            app.user_left_at = None;
+                            app.closing_in_seconds = None;
                         }
                         _ => {}
                     },
@@ -602,24 +706,48 @@ where
                     app.status_message = format!("Error: {}", message);
                     app.mode = AppMode::Welcome;
                 }
+                ServerMessage::MessageAck { message_id } => {
+                    // Remove from pending messages
+                    app.pending_messages.retain(|pm| pm.message_id != message_id);
+                    
+                    // Mark message as sent in UI
+                    for msg in app.messages.iter_mut().rev() {
+                        if let Some(ref msg_id) = msg.message_id {
+                            if msg_id == &message_id {
+                                msg.sent = true;
+                                break;
+                            }
+                        }
+                    }
+                }
                 ServerMessage::MessageReceived {
-                    encrypted_payload, ..
+                    encrypted_payload,
+                    message_id,
+                    ..
                 } => {
                     if let Some(ref key) = app.chat_key {
                         if let Some(ref mut chain_key) = app.chain_key {
-                            // Try decrypting with current and nearby chain keys
+                            // Try decrypting with sender's chain key index
                             let mut decrypted_payload = None;
-                            let current_index = chain_key.index();
                             
-                            // Try current key and next few keys (for out-of-order messages)
-                            for offset in 0..5 {
-                                let test_index = current_index + offset;
+                            // Try a range of indices around the current position
+                            // This handles out-of-order messages and different sender/receiver positions
+                            let current_index = chain_key.index();
+                            let start_index = current_index.saturating_sub(5);
+                            let end_index = current_index + 20; // Look ahead more for messages from others
+                            
+                            for test_index in start_index..=end_index {
                                 let mut test_chain = chain_key.clone();
                                 test_chain.advance_to(test_index);
                                 let test_key = test_chain.next();
                                 
                                 if let Ok(decrypted) = key.decrypt_with_chain(&encrypted_payload, &test_key) {
                                     if let Ok(payload) = bincode::deserialize::<MessagePayload>(&decrypted) {
+                                        // Verify the chain_key_index matches
+                                        if payload.chain_key_index != test_index {
+                                            continue; // Wrong index, keep trying
+                                        }
+                                        
                                         // Verify signature
                                         let mut sig_data = Vec::new();
                                         sig_data.extend_from_slice(payload.content.as_bytes());
@@ -639,31 +767,79 @@ where
                             }
                             
                             if let Some((payload, verified, used_index)) = decrypted_payload {
-                                // Advance chain key to the used index
-                                chain_key.advance_to(used_index);
+                                // Advance chain key PAST the used index for next message
+                                // This ensures we're ready for the next message in sequence
+                                chain_key.advance_to(used_index + 1);
                                 
-                                app.messages.push(ChatMessage {
-                                    username: payload.username.clone(),
-                                    content: payload.content.clone(),
-                                    timestamp: payload.timestamp,
-                                    verified,
-                                });
-                                
-                                if !verified {
-                                    app.status_message = "⚠️ Warning: Unverified message signature!".to_string();
+                                // Check if this is our own message (already added locally)
+                                if payload.username == app.username {
+                                    // This is our own message echoed back from server
+                                    // Find it in messages and confirm it was sent successfully
+                                    // Look for the most recent unsent message from us
+                                    for msg in app.messages.iter_mut().rev() {
+                                        if msg.username == app.username && !msg.sent && msg.content == payload.content {
+                                            msg.sent = true;
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    // This is a message from another user
+                                    app.messages.push(ChatMessage {
+                                        username: payload.username.clone(),
+                                        content: payload.content.clone(),
+                                        timestamp: payload.timestamp,
+                                        verified,
+                                        sent: true, // Received messages are already sent
+                                        message_id: Some(message_id),
+                                    });
+                                    
+                                    if !verified {
+                                        app.status_message = "⚠️ Warning: Unverified message signature!".to_string();
+                                    }
+                                    
+                                    // Auto-scroll on new message
+                                    app.scroll_to_bottom();
                                 }
-                                
-                                // Auto-scroll on new message
-                                app.scroll_to_bottom();
                             }
                         }
                     }
                 }
                 ServerMessage::UserJoined { username, .. } => {
-                    app.status_message = format!("{} joined the chat", username);
+                    app.status_message = format!("✅ {} joined the chat", username);
+                    
+                    // Add system message to chat
+                    app.messages.push(ChatMessage {
+                        username: "SYSTEM".to_string(),
+                        content: format!("{} joined the chat", username),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
+                        verified: true,
+                        sent: true, // System messages are always sent
+                        message_id: None,
+                    });
+                    app.scroll_to_bottom();
                 }
                 ServerMessage::UserLeft { username, .. } => {
-                    app.status_message = format!("{} left the chat", username);
+                    // Add system message to chat
+                    app.messages.push(ChatMessage {
+                        username: "SYSTEM".to_string(),
+                        content: format!("⚠️  {} left the chat. Chat will close in 5 seconds...", username),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
+                        verified: true,
+                        sent: true, // System messages are always sent
+                        message_id: None,
+                    });
+                    app.scroll_to_bottom();
+                    
+                    // Start countdown for auto-close
+                    app.user_left_at = Some(std::time::Instant::now());
+                    app.closing_in_seconds = Some(5);
+                    app.status_message = format!("⚠️  {} left the chat - Closing in 5 seconds...", username);
                 }
             }
         }

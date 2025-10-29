@@ -72,7 +72,7 @@ async fn handle_client(
     client_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
-    let mut current_chat: Option<String> = None;
+    let mut current_chat: Option<(String, String)> = None; // (room_id, room_client_id)
 
     // Split dello stream per leggere e scrivere concorrentemente
     let (mut read_half, mut write_half) = tokio::io::split(stream);
@@ -130,9 +130,11 @@ async fn handle_client(
                 // Il client ha generato il chat_code localmente e ci invia solo il room_id (hash)
                 // Il server non conosce mai il chat_code originale
                 state.create_chat(room_id.clone(), chat_type.clone()).await;
-                let _ = state.join_chat(&room_id, username.clone(), tx.clone()).await;
-
-                current_chat = Some(room_id.clone());
+                
+                // Join returns the actual client_id used in the room
+                if let Ok((_, _, room_client_id)) = state.join_chat(&room_id, username.clone(), tx.clone()).await {
+                    current_chat = Some((room_id.clone(), room_client_id));
+                }
 
                 let _ = tx
                     .send(ServerMessage::ChatCreated {
@@ -147,8 +149,8 @@ async fn handle_client(
                 username,
             } => {
                 match state.join_chat(&room_id, username.clone(), tx.clone()).await {
-                    Ok((chat_type, count)) => {
-                        current_chat = Some(room_id.clone());
+                    Ok((chat_type, count, room_client_id)) => {
+                        current_chat = Some((room_id.clone(), room_client_id.clone()));
 
                         let _ = tx
                             .send(ServerMessage::JoinedChat {
@@ -158,9 +160,9 @@ async fn handle_client(
                             })
                             .await;
 
-                        // Notifica gli altri partecipanti
+                        // Notifica gli altri partecipanti (escludi il nuovo arrivato)
                         state
-                            .broadcast_user_event(&room_id, username, true)
+                            .broadcast_user_event(&room_id, username, true, Some(&room_client_id))
                             .await;
                     }
                     Err(e) => {
@@ -172,18 +174,41 @@ async fn handle_client(
             ClientMessage::SendMessage {
                 room_id,
                 encrypted_payload,
+                message_id,
             } => {
-                // Il server NON decripta, inoltra solo
+                // Send ACK immediately to confirm receipt
+                let _ = tx.send(ServerMessage::MessageAck { 
+                    message_id: message_id.clone() 
+                }).await;
+                
+                // Then broadcast the message to all participants
                 state
-                    .broadcast_message(&room_id, encrypted_payload, &client_id)
+                    .broadcast_message(&room_id, encrypted_payload, &message_id, &client_id)
                     .await;
             }
 
             ClientMessage::LeaveChat { room_id } => {
-                if let Some(username) = state.leave_chat(&room_id, &client_id).await {
-                    state
-                        .broadcast_user_event(&room_id, username, false)
-                        .await;
+                if let Some((ref stored_room_id, ref room_client_id)) = current_chat {
+                    if stored_room_id == &room_id {
+                        println!("📤 Client {} (room_id: {}) requested to leave chat {}", 
+                            &client_id[..8.min(client_id.len())], 
+                            &room_client_id[..16.min(room_client_id.len())],
+                            &room_id[..8.min(room_id.len())]);
+                        
+                        // Broadcast BEFORE removing the user, so others can still receive the notification
+                        // Exclude the leaving user from receiving their own leave notification
+                        if let Some(username) = state.get_username(&room_id, room_client_id).await {
+                            println!("   User '{}' is leaving, broadcasting to others...", username);
+                            state
+                                .broadcast_user_event(&room_id, username.clone(), false, Some(room_client_id))
+                                .await;
+                            // Now remove the user
+                            state.leave_chat(&room_id, room_client_id).await;
+                            println!("   ✓ User '{}' removed from room", username);
+                        } else {
+                            println!("   ⚠️ Could not find username for room_client {}", room_client_id);
+                        }
+                    }
                 }
                 current_chat = None;
             }
@@ -191,9 +216,21 @@ async fn handle_client(
     }
 
     // Cleanup alla disconnessione
-    if let Some(room_id) = current_chat {
-        if let Some(username) = state.leave_chat(&room_id, &client_id).await {
-            state.broadcast_user_event(&room_id, username, false).await;
+    if let Some((room_id, room_client_id)) = current_chat {
+        println!("🧹 Cleanup: Client {} (room_id: {}) disconnected from room {}", 
+            &client_id[..8.min(client_id.len())], 
+            &room_client_id[..16.min(room_client_id.len())],
+            &room_id[..8.min(room_id.len())]);
+        
+        // Broadcast BEFORE removing the user
+        // Exclude the disconnecting user (they won't receive it anyway)
+        if let Some(username) = state.get_username(&room_id, &room_client_id).await {
+            println!("   User '{}' disconnected, broadcasting to others...", username);
+            state.broadcast_user_event(&room_id, username.clone(), false, Some(&room_client_id)).await;
+            state.leave_chat(&room_id, &room_client_id).await;
+            println!("   ✓ User '{}' removed from room", username);
+        } else {
+            println!("   ⚠️ Could not find username for disconnected room_client {}", room_client_id);
         }
     }
 

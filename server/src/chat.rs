@@ -38,14 +38,25 @@ impl ChatRoom {
     }
 
     pub async fn broadcast(&self, msg: ServerMessage, exclude_client: Option<&str>) {
-        for (client_id, (_, tx)) in &self.participants {
+        let mut sent_count = 0;
+        for (client_id, (username, tx)) in &self.participants {
             if let Some(exclude) = exclude_client {
                 if client_id == exclude {
+                    println!("   ⊘ Skipping client: {} ({})", &client_id[..8.min(client_id.len())], username);
                     continue;
                 }
             }
-            let _ = tx.send(msg.clone()).await;
+            match tx.send(msg.clone()).await {
+                Ok(_) => {
+                    println!("   ✓ Sent to client: {} ({})", &client_id[..8.min(client_id.len())], username);
+                    sent_count += 1;
+                }
+                Err(e) => {
+                    println!("   ✗ Failed to send to {}: {}", &client_id[..8.min(client_id.len())], e);
+                }
+            }
         }
+        println!("   📊 Total sent: {}/{}", sent_count, self.participants.len());
     }
 }
 
@@ -81,7 +92,7 @@ impl ChatState {
         room_id: &str,
         username: String,
         sender: mpsc::Sender<ServerMessage>,
-    ) -> Result<(ChatType, usize), String> {
+    ) -> Result<(ChatType, usize, String), String> {
         let chats = self.chats.lock().await;
         let room = chats
             .get(room_id)
@@ -94,9 +105,16 @@ impl ChatState {
         }
 
         let client_id = format!("{}_{}", username, uuid::Uuid::new_v4());
-        room.add_participant(client_id, username, sender);
+        room.add_participant(client_id.clone(), username, sender);
 
-        Ok((room.chat_type.clone(), room.participants.len()))
+        Ok((room.chat_type.clone(), room.participants.len(), client_id))
+    }
+
+    pub async fn get_username(&self, room_id: &str, client_id: &str) -> Option<String> {
+        let chats = self.chats.lock().await;
+        let room = chats.get(room_id)?;
+        let room = room.lock().await;
+        room.participants.get(client_id).map(|(username, _)| username.clone())
     }
 
     pub async fn leave_chat(&self, room_id: &str, client_id: &str) -> Option<String> {
@@ -110,11 +128,13 @@ impl ChatState {
         &self,
         room_id: &str,
         encrypted_payload: Vec<u8>,
+        message_id: &str,
         _sender_id: &str,
     ) {
         let chats = self.chats.lock().await;
         if let Some(room) = chats.get(room_id) {
             let room = room.lock().await;
+            
             let msg = ServerMessage::MessageReceived {
                 room_id: room_id.to_string(),
                 encrypted_payload,
@@ -122,28 +142,52 @@ impl ChatState {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs() as i64,
+                message_id: message_id.to_string(),
             };
             // Send to ALL, including the sender (None = no exclusion)
             room.broadcast(msg, None).await;
         }
     }
 
-    pub async fn broadcast_user_event(&self, room_id: &str, username: String, joined: bool) {
+    pub async fn broadcast_user_event(&self, room_id: &str, username: String, joined: bool, exclude_client: Option<&str>) {
         let chats = self.chats.lock().await;
         if let Some(room) = chats.get(room_id) {
             let room = room.lock().await;
+            
+            let event_type = if joined { "joined" } else { "left" };
+            let excluded = exclude_client.map(|c| &c[..8.min(c.len())]).unwrap_or("none");
+            let participant_count = room.participants.len();
+            
+            println!("🔔 User '{}' {} | Room {} | {} participants | Excluding: {}", 
+                username, event_type, &room_id[..8.min(room_id.len())], participant_count, excluded);
+            
             let msg = if joined {
                 ServerMessage::UserJoined {
                     room_id: room_id.to_string(),
-                    username,
+                    username: username.clone(),
                 }
             } else {
                 ServerMessage::UserLeft {
                     room_id: room_id.to_string(),
-                    username,
+                    username: username.clone(),
                 }
             };
-            room.broadcast(msg, None).await;
+            
+            // Count how many will receive
+            let mut sent_to = 0;
+            for (cid, _) in &room.participants {
+                if let Some(exclude) = exclude_client {
+                    if cid == exclude {
+                        continue;
+                    }
+                }
+                sent_to += 1;
+            }
+            println!("   → Sending to {} clients", sent_to);
+            
+            room.broadcast(msg, exclude_client).await;
+        } else {
+            println!("⚠️  Room {} not found!", &room_id[..8.min(room_id.len())]);
         }
     }
 }

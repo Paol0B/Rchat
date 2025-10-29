@@ -24,6 +24,18 @@ pub struct ChatMessage {
     pub content: String,
     pub timestamp: i64,
     pub verified: bool, // Message signature verified
+    pub sent: bool,     // Message successfully sent to server
+    pub message_id: Option<String>, // Unique ID for tracking
+}
+
+/// Pending message waiting for ACK
+#[derive(Clone)]
+pub struct PendingMessage {
+    pub message_id: String,
+    pub room_id: String,
+    pub encrypted_payload: Vec<u8>,
+    pub sent_at: std::time::Instant,
+    pub retry_count: u8,
 }
 
 pub struct App {
@@ -40,6 +52,9 @@ pub struct App {
     pub status_message: String,
     pub scroll_offset: usize,
     pub numeric_codes: bool, // Usa codici numerici invece di base64
+    pub user_left_at: Option<std::time::Instant>, // Timestamp when a user left
+    pub closing_in_seconds: Option<u8>,   // Countdown for auto-close
+    pub pending_messages: Vec<PendingMessage>, // Messages waiting for ACK
 }
 
 impl App {
@@ -58,6 +73,9 @@ impl App {
             status_message: String::new(),
             scroll_offset: 0,
             numeric_codes,
+            user_left_at: None,
+            closing_in_seconds: None,
+            pending_messages: Vec::new(),
         }
     }
 
@@ -302,19 +320,37 @@ fn draw_chat(f: &mut Frame, app: &App) {
         .take(end_idx - start_idx)
         .map(|m| {
             let time = format_timestamp(m.timestamp);
-            let verified_mark = if m.verified { "✓" } else { "⚠" };
-            let verify_color = if m.verified { Color::White } else { Color::Yellow };
+            
+            // Determine message status and colors
+            let (status_mark, status_color, content_color) = if !m.sent {
+                ("✗", Color::Red, Color::Red)  // Not sent
+            } else if m.verified {
+                ("✓", Color::White, Color::White)  // Sent and verified
+            } else {
+                ("⚠", Color::Yellow, Color::Yellow)  // Sent but not verified
+            };
+            
             let user_color = username_color(&m.username);
             
             // Create a line with colored spans
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(format!("[{}] ", time), Style::default().fg(Color::Gray)),
-                Span::styled(format!("{} ", verified_mark), Style::default().fg(verify_color)),
+                Span::styled(format!("{} ", status_mark), Style::default().fg(status_color)),
+            ];
+            
+            // Add "NOT SENT" label for failed messages
+            if !m.sent {
+                spans.push(Span::styled("[NOT SENT] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+            }
+            
+            spans.extend(vec![
                 Span::styled("<", Style::default().fg(Color::Gray)),
                 Span::styled(m.username.clone(), Style::default().fg(user_color).add_modifier(Modifier::BOLD)),
                 Span::styled(">: ", Style::default().fg(Color::Gray)),
-                Span::styled(m.content.clone(), Style::default().fg(verify_color)),
+                Span::styled(m.content.clone(), Style::default().fg(content_color)),
             ]);
+            
+            let line = Line::from(spans);
             
             ListItem::new(line)
         })
@@ -340,13 +376,22 @@ fn draw_chat(f: &mut Frame, app: &App) {
     f.render_widget(input, chunks[2]);
 
     // Footer
-    let footer_text = if app.status_message.is_empty() {
-        "[ENTER] Send | [↑↓] Scroll | [ESC] Exit | [CTRL+C] Terminate".to_string()
+    let (footer_text, footer_color) = if let Some(seconds) = app.closing_in_seconds {
+        (
+            format!("⚠️  CHAT CLOSING IN {} SECONDS - Other user left ⚠️", seconds),
+            Color::Red
+        )
+    } else if app.status_message.is_empty() {
+        (
+            "[ENTER] Send | [↑↓] Scroll | [ESC] Exit | [CTRL+C] Terminate".to_string(),
+            Color::Gray
+        )
     } else {
-        app.status_message.clone()
+        (app.status_message.clone(), Color::Gray)
     };
+    
     let footer = Paragraph::new(footer_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(footer_color).add_modifier(Modifier::BOLD))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(footer, chunks[3]);
