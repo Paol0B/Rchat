@@ -1,0 +1,10 @@
+[advisories]
+ignore = []
+
+[output]
+deny = "warnings"
+format = "json"
+
+[target]
+arch = []
+os = []
