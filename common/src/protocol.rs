@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::Zeroize;
 
 /// Tipi di chat supportati
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

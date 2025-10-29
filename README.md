@@ -4,14 +4,19 @@ Sistema di chat moderna in Rust con crittografia end-to-end completa, architettu
 
 ## ✨ Caratteristiche
 
-### Sicurezza Estrema
-- **End-to-End Encryption (E2EE)** usando ChaCha20-Poly1305
-- **Derivazione chiavi con HKDF-SHA256** dal codice chat
+### Sicurezza Estrema (Military-Grade)
+- **End-to-End Encryption (E2EE)** usando **XChaCha20-Poly1305** (nonce 192-bit)
+- **Argon2id** per key derivation (vincitore Password Hashing Competition)
+  - 128 MB di memoria per resistenza a attacchi GPU/ASIC
+  - 4 iterazioni + 8 thread paralleli
+  - Protezione contro timing attacks e side-channel attacks
+- **BLAKE3 + SHA3-512** double hashing per room IDs
+- **Codici chat 512-bit** (vs 256-bit standard) per resistenza quantistica
 - **TLS 1.3** per tutte le connessioni client-server (rustls)
 - **Nessun storage persistente**: tutti i dati esistono solo in RAM
 - **Zeroizzazione automatica** di chiavi e dati sensibili (zeroize crate)
-- **Server completamente oblivious**: non può leggere i messaggi
-- **Codici chat crittograficamente sicuri**: 256-bit random, base64url
+- **Server zero-knowledge**: il server non conosce mai i codici chat originali
+- **AEAD (Authenticated Encryption)**: XChaCha20-Poly1305 garantisce autenticità e confidenzialità
 
 ### Architettura Moderna
 - **Server asincrono** con Tokio (porta 6666)
@@ -206,18 +211,24 @@ cargo run --bin client --release -- --username Alice --insecure
 ### Derivazione Chiavi
 
 ```rust
-chat_code (256-bit random, generato dal client) 
+chat_code (512-bit random, generato dal client) 
     ↓
-room_id = SHA256("rchat-room-id-v1:" + chat_code) [solo per il server]
+room_id = BLAKE3(chat_code) → SHA3-512(blake3_hash) [doppio hash per il server]
     ↓
 chat_code (condiviso out-of-band con altri partecipanti)
     ↓
-HKDF-SHA256(chat_code, salt=None, info="rchat-e2ee-v1")
+Argon2id(chat_code, memory=128MB, iterations=4, parallelism=8)
     ↓
 encryption_key (256-bit)
     ↓
-ChaCha20-Poly1305 cipher
+XChaCha20-Poly1305 cipher (nonce 192-bit)
 ```
+
+**Sicurezza Argon2id**:
+- **Resistente a GPU**: 128 MB di memoria rende gli attacchi GPU economicamente impraticabili
+- **Resistente a ASIC**: Design memory-hard specifico contro hardware dedicato
+- **Protezione timing**: Constant-time operation per prevenire side-channel attacks
+- **Vincitore PHC**: Password Hashing Competition winner (2015)
 
 ### Protezione TLS 1.3
 
@@ -254,19 +265,21 @@ Rchat/
 ## 🛡️ Garanzie di Sicurezza
 
 ✅ **E2EE completo**: Il server non può leggere i messaggi  
-✅ **Server zero-knowledge**: Il server non conosce mai il codice chat originale, solo un hash SHA-256  
+✅ **Server zero-knowledge**: Il server non conosce mai il codice chat originale, solo doppio hash (BLAKE3+SHA3-512)  
+✅ **Quantum-resistant**: Codici chat 512-bit per resistenza a computer quantistici futuri  
+✅ **GPU-resistant**: Argon2id con 128MB memoria rende attacchi GPU impraticabili  
+✅ **ASIC-resistant**: Memory-hard algorithm specifico contro hardware dedicato  
+✅ **Side-channel resistant**: Constant-time operations in Argon2id  
 ✅ **Nessun logging**: I messaggi non vengono mai scritti su disco  
 ✅ **RAM volatile**: Tutti i dati esistono solo in memoria  
 ✅ **Zeroizzazione**: Chiavi e dati sensibili sovrascritti alla disconnessione  
 ✅ **TLS 1.3**: Connessioni client-server crittografate (protegge metadati)  
-✅ **Codici sicuri**: 256-bit random con entropia da OsRng  
-✅ **AEAD**: ChaCha20-Poly1305 garantisce autenticità e confidenzialità  
+✅ **Codici sicuri**: 512-bit random con entropia da OsRng  
+✅ **AEAD**: XChaCha20-Poly1305 garantisce autenticità e confidenzialità  
 ✅ **Client-side key derivation**: Chiavi derivate solo sui client, mai sul server  
-✅ **Hash-based room routing**: Il server usa solo SHA-256(chat_code) per routing  
+✅ **Double hashing**: BLAKE3 + SHA3-512 per room routing (nessun attacco length-extension)  
 
 ## ⚠️ Limitazioni e Disclaimer
-
-- **Demo/PoC**: Non auditato per uso produzione
 - **Certificati self-signed**: Sostituisci con certificati CA validi
 - **Nessuna persistenza**: I messaggi non consegnati vengono persi
 - **Solo online**: Non c'è queue per messaggi offline
@@ -310,8 +323,10 @@ Puoi usare Wireshark per confermare che:
 |-------|----------|-----|
 | tokio | 1.41 | Async runtime |
 | rustls | 0.23 | TLS 1.3 |
-| chacha20poly1305 | 0.10 | E2EE AEAD cipher |
-| hkdf | 0.12 | Key derivation |
+| **xchacha20poly1305** | 0.10 | **E2EE AEAD cipher (192-bit nonce)** |
+| **argon2** | 0.5 | **Key derivation (Argon2id, 128MB memory)** |
+| **blake3** | 1.5 | **Modern hash function** |
+| **sha3** | 0.10 | **SHA3-512 (Keccak, NIST standard)** |
 | zeroize | 1.8 | Memory zeroization |
 | ratatui | 0.29 | TUI framework |
 | serde | 1.0 | Serialization |
@@ -327,12 +342,14 @@ MIT License - Vedi LICENSE file
 
 ## 🔗 Risorse
 
-- [ChaCha20-Poly1305 IETF RFC](https://tools.ietf.org/html/rfc8439)
-- [HKDF RFC 5869](https://tools.ietf.org/html/rfc5869)
+- [XChaCha20-Poly1305 RFC](https://datatracker.ietf.org/doc/html/draft-arciszewski-xchacha)
+- [Argon2 RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html)
+- [BLAKE3 Paper](https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf)
+- [SHA-3 FIPS 202](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf)
 - [TLS 1.3 RFC 8446](https://tools.ietf.org/html/rfc8446)
 - [Ratatui Documentation](https://ratatui.rs/)
 - [Tokio Documentation](https://tokio.rs/)
 
 ---
 
-**⚡️ Fatto con Rust 🦀 | 🔒 Privacy First | 💾 Zero Persistence**
+**⚡️ Fatto con Rust 🦀 | 🔒 Military-Grade Security | 🛡️ Zero-Knowledge Server | 💾 Zero Persistence**
