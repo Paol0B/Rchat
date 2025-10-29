@@ -108,18 +108,6 @@ If you discover a security vulnerability:
 
 We will acknowledge receipt within 48 hours.
 
-## 🔬 Security Audits
-
-**Status**: ❌ NOT AUDITED
-
-This software has **NOT** undergone professional security auditing.
-
-**Do NOT use in production** without:
-- Professional cryptographic audit
-- Penetration testing
-- Code review by security experts
-- Formal threat modeling
-
 ## 📚 Cryptographic Dependencies
 
 | Crate | Version | Purpose | Audit Status |
