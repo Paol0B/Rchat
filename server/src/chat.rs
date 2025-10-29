@@ -59,12 +59,22 @@ impl Drop for ChatRoom {
 /// Stato globale del server
 pub struct ChatState {
     chats: Arc<Mutex<HashMap<String, Arc<Mutex<ChatRoom>>>>>,
+    numeric_codes: bool,
 }
 
 impl ChatState {
-    pub fn new() -> Self {
+    pub fn new(numeric_codes: bool) -> Self {
         Self {
             chats: Arc::new(Mutex::new(HashMap::new())),
+            numeric_codes,
+        }
+    }
+
+    pub fn generate_chat_code(&self) -> String {
+        if self.numeric_codes {
+            common::generate_numeric_chat_code()
+        } else {
+            common::generate_chat_code()
         }
     }
 
@@ -107,7 +117,7 @@ impl ChatState {
         &self,
         chat_code: &str,
         encrypted_payload: Vec<u8>,
-        sender_id: &str,
+        _sender_id: &str,
     ) {
         let chats = self.chats.lock().await;
         if let Some(room) = chats.get(chat_code) {
@@ -120,7 +130,8 @@ impl ChatState {
                     .unwrap()
                     .as_secs() as i64,
             };
-            room.broadcast(msg, Some(sender_id)).await;
+            // Invia a TUTTI, incluso il mittente (None = nessuna esclusione)
+            room.broadcast(msg, None).await;
         }
     }
 

@@ -24,6 +24,9 @@ Sistema di chat moderna in Rust con crittografia end-to-end completa, architettu
 - **TUI reattiva** con Ratatui e Crossterm
 - **ASCII art** minimalista nella schermata iniziale
 - **Chat real-time** con timestamp [HH:MM]
+- **Scroll automatico** dei messaggi
+- **Copia/Incolla**: CTRL+V per incollare codici chat 📋
+- **Auto-copy**: Codice chat copiato automaticamente alla creazione 📋
 - **Notifiche** di entrata/uscita utenti
 
 ### Tipi di Chat
@@ -69,11 +72,24 @@ cargo build --release
 
 ### Avvia il Server
 
+**Server standard (codici base64 completi - più sicuro):**
 ```bash
 cargo run --bin server --release
 ```
 
-Il server si avvia su `0.0.0.0:6666` e attende connessioni.
+**Server con codici numerici a 6 cifre (più semplice da condividere):**
+```bash
+cargo run --bin server --release -- --numeric-codes
+```
+
+⚠️ **ATTENZIONE**: I codici numerici hanno solo ~20 bit di entropia (1 milione di combinazioni) rispetto ai 256 bit dei codici completi. Sono più facili da digitare ma meno sicuri contro attacchi brute-force.
+
+Parametri del server:
+- `--host`: Indirizzo di bind (default: 0.0.0.0)
+- `--port`: Porta del server (default: 6666)
+- `--numeric-codes`: Usa codici a 6 cifre invece di base64 lunghi
+
+Il server si avvia e attende connessioni.
 
 ### Avvia il Client
 
@@ -85,6 +101,15 @@ Parametri:
 - `--host`: Indirizzo IP del server (default: 127.0.0.1)
 - `--port`: Porta del server (default: 6666)
 - `--username`: Il tuo nome utente (richiesto)
+- `--insecure`: Accetta certificati self-signed (⚠️ SOLO per testing!)
+
+**Per testing locale con certificati self-signed:**
+
+```bash
+cargo run --bin client --release -- --username Alice --insecure
+```
+
+⚠️ **IMPORTANTE**: L'opzione `--insecure` disabilita la verifica dei certificati TLS e deve essere usata SOLO per testing in ambiente locale. NON usarla mai in produzione!
 
 ### Flusso di Utilizzo
 
@@ -95,16 +120,27 @@ Parametri:
 
 2. **Creare una Chat**:
    - Scegli tipo: `1` per 1:1, `2` per gruppo
-   - Il sistema genera un codice univoco (es: `xJ4k9L2m...`)
-   - **Condividi questo codice** con gli altri partecipanti (via canale sicuro)
+   - Il sistema genera un codice univoco:
+     - Formato standard: `xJ4k9L2m...` (base64, 43 caratteri)
+     - Formato numerico: `123456` (6 cifre) - solo se server avviato con `--numeric-codes`
+   - **Il codice viene copiato automaticamente nella clipboard!** 📋
+   - Condividi il codice con gli altri partecipanti
 
 3. **Unirsi a una Chat**:
    - Inserisci il codice ricevuto
+   - Oppure incolla con:
+     - `CTRL+V` (potrebbe non funzionare in tutti i terminali)
+     - `SHIFT+Insert` (standard Linux) 📋
+     - **Click destro del mouse** 🖱️
    - Premi `ENTER` per confermare
 
 4. **Chat**:
    - Scrivi il messaggio e premi `ENTER` per inviare
+   - Incolla testo con `CTRL+V`, `SHIFT+Insert` o **click destro** 🖱️
    - I messaggi sono crittografati automaticamente
+   - Usa `↑` / `↓` per scorrere i messaggi
+   - `PageUp` / `PageDown` per scroll veloce
+   - `Home` per andare all'inizio, `End` per andare alla fine
    - Premi `ESC` per uscire dalla chat
    - Premi `CTRL+C` per terminare il client
 

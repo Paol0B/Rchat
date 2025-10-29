@@ -15,6 +15,14 @@ pub fn generate_chat_code() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// Generatore di codici chat semplici (6 cifre numeriche)
+/// ATTENZIONE: Meno sicuro del formato completo (solo ~20 bit di entropia vs 256 bit)
+pub fn generate_numeric_chat_code() -> String {
+    use rand::Rng;
+    let code = rand::thread_rng().gen_range(100000..=999999);
+    format!("{:06}", code)
+}
+
 /// Deriva una chiave di crittografia dal codice della chat usando HKDF
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct ChatKey {
@@ -23,16 +31,27 @@ pub struct ChatKey {
 }
 
 impl ChatKey {
-    /// Deriva la chiave dal codice della chat
+    /// Deriva la chiave dal codice della chat (supporta sia formato numerico che base64)
     pub fn derive_from_code(chat_code: &str) -> Result<Self, CryptoError> {
-        // Decodifica il codice base64
-        let chat_secret = URL_SAFE_NO_PAD
-            .decode(chat_code)
-            .map_err(|_| CryptoError::InvalidChatCode)?;
-
-        if chat_secret.len() != 32 {
-            return Err(CryptoError::InvalidChatCode);
-        }
+        let chat_secret = if chat_code.len() == 6 && chat_code.chars().all(|c| c.is_ascii_digit()) {
+            // Formato numerico: espandi a 32 byte usando HKDF
+            let numeric_bytes = chat_code.as_bytes();
+            let hkdf = Hkdf::<Sha256>::new(Some(b"rchat-numeric-code"), numeric_bytes);
+            let mut expanded = [0u8; 32];
+            hkdf.expand(b"rchat-secret-expansion", &mut expanded)
+                .map_err(|_| CryptoError::InvalidChatCode)?;
+            expanded.to_vec()
+        } else {
+            // Formato base64: decodifica direttamente
+            let decoded = URL_SAFE_NO_PAD
+                .decode(chat_code)
+                .map_err(|_| CryptoError::InvalidChatCode)?;
+            
+            if decoded.len() != 32 {
+                return Err(CryptoError::InvalidChatCode);
+            }
+            decoded
+        };
 
         // Usa HKDF per derivare una chiave di crittografia
         let hkdf = Hkdf::<Sha256>::new(None, &chat_secret);

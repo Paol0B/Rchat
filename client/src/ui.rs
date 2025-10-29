@@ -31,6 +31,7 @@ pub struct App {
     pub chat_key: Option<ChatKey>,
     pub messages: Vec<ChatMessage>,
     pub status_message: String,
+    pub scroll_offset: usize,
 }
 
 impl App {
@@ -43,7 +44,24 @@ impl App {
             chat_key: None,
             messages: Vec::new(),
             status_message: String::new(),
+            scroll_offset: 0,
         }
+    }
+
+    pub fn scroll_up(&mut self) {
+        if self.scroll_offset > 0 {
+            self.scroll_offset -= 1;
+        }
+    }
+
+    pub fn scroll_down(&mut self) {
+        if !self.messages.is_empty() {
+            self.scroll_offset = self.scroll_offset.saturating_add(1);
+        }
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = self.messages.len().saturating_sub(1);
     }
 }
 
@@ -178,7 +196,7 @@ fn draw_join_chat(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Codice"));
     f.render_widget(input, chunks[1]);
 
-    let footer = Paragraph::new("[ENTER] Conferma | [ESC] Annulla")
+    let footer = Paragraph::new("[ENTER] Conferma | [CTRL+V / SHIFT+INS / Click Destro] Incolla | [ESC] Annulla")
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -216,10 +234,25 @@ fn draw_chat(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(header, chunks[0]);
 
-    // Messaggi
+    // Messaggi con scrolling
+    let message_area_height = chunks[1].height.saturating_sub(2) as usize; // -2 per i bordi
+    let total_messages = app.messages.len();
+    
+    // Calcola l'offset di visualizzazione
+    let start_idx = if total_messages > message_area_height {
+        // Se ci sono più messaggi dell'area, mostra gli ultimi
+        total_messages.saturating_sub(message_area_height).saturating_sub(app.scroll_offset)
+    } else {
+        0
+    };
+    
+    let end_idx = (start_idx + message_area_height).min(total_messages);
+    
     let messages: Vec<ListItem> = app
         .messages
         .iter()
+        .skip(start_idx)
+        .take(end_idx - start_idx)
         .map(|m| {
             let time = format_timestamp(m.timestamp);
             let content = format!("[{}] <{}>: {}", time, m.username, m.content);
@@ -227,10 +260,16 @@ fn draw_chat(f: &mut Frame, app: &App) {
         })
         .collect();
 
+    let scroll_indicator = if total_messages > message_area_height {
+        format!(" ({}/{})", start_idx + 1, total_messages.saturating_sub(message_area_height))
+    } else {
+        String::new()
+    };
+
     let messages_list = List::new(messages).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Messaggi (E2EE)"),
+            .title(format!("Messaggi (E2EE){}", scroll_indicator)),
     );
     f.render_widget(messages_list, chunks[1]);
 
@@ -242,7 +281,7 @@ fn draw_chat(f: &mut Frame, app: &App) {
 
     // Footer
     let footer_text = if app.status_message.is_empty() {
-        "[ENTER] Invia | [ESC] Esci | [CTRL+C] Termina".to_string()
+        "[ENTER] Invia | [↑↓] Scroll | [ESC] Esci | [CTRL+C] Termina".to_string()
     } else {
         app.status_message.clone()
     };

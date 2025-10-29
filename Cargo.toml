@@ -23,3 +23,5 @@ hkdf = "0.12"
 sha2 = "0.10"
 zeroize = { version = "1.8", features = ["derive"] }
 base64 = "0.22"
+clap = { version = "4.5", features = ["derive"] }
+uuid = { version = "1.11", features = ["v4"] }

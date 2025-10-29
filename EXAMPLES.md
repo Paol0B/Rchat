@@ -21,8 +21,10 @@ $ cargo run --bin server
 ### Terminale 2: Alice (crea la chat)
 
 ```bash
-$ cargo run --bin client -- --username Alice
+$ cargo run --bin client -- --username Alice --insecure
 ```
+
+**Nota**: Usiamo `--insecure` per accettare certificati self-signed in ambiente di test.
 
 **Schermata iniziale:**
 ```
@@ -45,7 +47,7 @@ $ cargo run --bin client -- --username Alice
 ### Terminale 3: Bob (si unisce alla chat)
 
 ```bash
-$ cargo run --bin client -- --username Bob
+$ cargo run --bin client -- --username Bob --insecure
 ```
 
 1. Premi `2` (Unisciti a chat)
@@ -78,7 +80,7 @@ Alice, Bob e Charlie vogliono una chat di gruppo sicura.
 ### Alice (crea gruppo)
 
 ```bash
-$ cargo run --bin client -- --username Alice --host 192.168.1.100
+$ cargo run --bin client -- --username Alice --host 192.168.1.100 --insecure
 ```
 
 1. Premi `1` (Crea chat)
@@ -89,7 +91,7 @@ $ cargo run --bin client -- --username Alice --host 192.168.1.100
 ### Bob si unisce
 
 ```bash
-$ cargo run --bin client -- --username Bob --host 192.168.1.100
+$ cargo run --bin client -- --username Bob --host 192.168.1.100 --insecure
 ```
 
 1. Premi `2` (Unisciti)
@@ -98,7 +100,7 @@ $ cargo run --bin client -- --username Bob --host 192.168.1.100
 ### Charlie si unisce
 
 ```bash
-$ cargo run --bin client -- --username Charlie --host 192.168.1.100
+$ cargo run --bin client -- --username Charlie --host 192.168.1.100 --insecure
 ```
 
 1. Premi `2` (Unisciti)

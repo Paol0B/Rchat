@@ -11,11 +11,14 @@ Cargo.lock
 *.swo
 *~
 
-# TLS certificates
+# TLS certificates (generated)
+server.crt
+server.key
 *.pem
-*.key
-*.crt
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Cargo registry cache
+.cargo/

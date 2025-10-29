@@ -1,7 +1,7 @@
 use clap::Parser;
 use common::{ChatKey, ChatType, ClientMessage, MessagePayload, ServerMessage};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -23,6 +23,21 @@ use tokio_rustls::TlsConnector;
 mod ui;
 use ui::*;
 
+/// Copia testo nella clipboard
+fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use arboard::Clipboard;
+    let mut clipboard = Clipboard::new()?;
+    clipboard.set_text(text)?;
+    Ok(())
+}
+
+/// Legge testo dalla clipboard
+fn get_clipboard_text() -> Result<String, Box<dyn std::error::Error>> {
+    use arboard::Clipboard;
+    let mut clipboard = Clipboard::new()?;
+    Ok(clipboard.get_text()?)
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "Rchat Client")]
 #[command(about = "Client E2EE per Rchat", long_about = None)]
@@ -38,6 +53,10 @@ struct Args {
     /// Username
     #[arg(short, long)]
     username: String,
+
+    /// Accetta certificati self-signed (INSICURO, solo per testing!)
+    #[arg(long, default_value_t = false)]
+    insecure: bool,
 }
 
 #[tokio::main]
@@ -72,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Setup TLS
-    let config = configure_tls()?;
+    let config = configure_tls(args.insecure)?;
     let connector = TlsConnector::from(Arc::new(config));
     let server_name = ServerName::try_from(args.host.clone())?;
 
@@ -110,7 +129,7 @@ fn cleanup_terminal(
     Ok(())
 }
 
-fn configure_tls() -> Result<ClientConfig, Box<dyn std::error::Error>> {
+fn configure_tls(insecure: bool) -> Result<ClientConfig, Box<dyn std::error::Error>> {
     use rustls::ClientConfig;
     use rustls::RootCertStore;
     use rustls_pemfile::certs;
@@ -118,6 +137,75 @@ fn configure_tls() -> Result<ClientConfig, Box<dyn std::error::Error>> {
     use std::io::BufReader;
 
     let mut root_store = RootCertStore::empty();
+
+    if insecure {
+        // Modalità insicura: accetta qualsiasi certificato (solo per testing!)
+        eprintln!("⚠️  MODALITÀ INSICURA: Accettazione di certificati self-signed");
+        eprintln!("⚠️  NON usare in produzione!");
+        
+        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+        use rustls::DigitallySignedStruct;
+        
+        #[derive(Debug)]
+        struct NoVerifier;
+        
+        impl ServerCertVerifier for NoVerifier {
+            fn verify_server_cert(
+                &self,
+                _end_entity: &CertificateDer<'_>,
+                _intermediates: &[CertificateDer<'_>],
+                _server_name: &ServerName<'_>,
+                _ocsp_response: &[u8],
+                _now: UnixTime,
+            ) -> Result<ServerCertVerified, rustls::Error> {
+                Ok(ServerCertVerified::assertion())
+            }
+
+            fn verify_tls12_signature(
+                &self,
+                _message: &[u8],
+                _cert: &CertificateDer<'_>,
+                _dss: &DigitallySignedStruct,
+            ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+
+            fn verify_tls13_signature(
+                &self,
+                _message: &[u8],
+                _cert: &CertificateDer<'_>,
+                _dss: &DigitallySignedStruct,
+            ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+
+            fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+                vec![
+                    rustls::SignatureScheme::RSA_PKCS1_SHA1,
+                    rustls::SignatureScheme::ECDSA_SHA1_Legacy,
+                    rustls::SignatureScheme::RSA_PKCS1_SHA256,
+                    rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+                    rustls::SignatureScheme::RSA_PKCS1_SHA384,
+                    rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+                    rustls::SignatureScheme::RSA_PKCS1_SHA512,
+                    rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
+                    rustls::SignatureScheme::RSA_PSS_SHA256,
+                    rustls::SignatureScheme::RSA_PSS_SHA384,
+                    rustls::SignatureScheme::RSA_PSS_SHA512,
+                    rustls::SignatureScheme::ED25519,
+                    rustls::SignatureScheme::ED448,
+                ]
+            }
+        }
+        
+        let config = ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerifier))
+            .with_no_client_auth();
+        
+        return Ok(config);
+    }
 
     // Carica certificato del server (per demo, accetta self-signed)
     let cert_path = "server.crt";
@@ -129,10 +217,12 @@ fn configure_tls() -> Result<ClientConfig, Box<dyn std::error::Error>> {
         for cert in certs {
             root_store.add(cert)?;
         }
+        
+        eprintln!("✅ Certificato server caricato da {}", cert_path);
     } else {
-        // Per demo, usa webpki-roots (certificati pubblici)
-        // In produzione dovresti validare il certificato del server
-        eprintln!("⚠️  Certificato server non trovato, usando modalità insicura");
+        eprintln!("⚠️  Certificato server non trovato in {}", cert_path);
+        eprintln!("⚠️  Usa --insecure per accettare certificati self-signed");
+        return Err("Certificato server mancante. Usa --insecure per testing.".into());
     }
 
     let config = ClientConfig::builder()
@@ -197,9 +287,35 @@ where
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
 
-        // Gestisci eventi
+        // Gestisci eventi (tastiera e mouse)
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
+            let evt = event::read()?;
+            
+            // Gestisci eventi mouse (paste con tasto destro)
+            if let Event::Mouse(mouse) = evt {
+                if mouse.kind == MouseEventKind::Down(MouseButton::Right) {
+                    // Incolla dalla clipboard quando si preme il tasto destro
+                    if app.mode == AppMode::JoinChat || app.mode == AppMode::Chat {
+                        match get_clipboard_text() {
+                            Ok(clipboard_text) => {
+                                if app.mode == AppMode::JoinChat {
+                                    app.input = clipboard_text.trim().to_string();
+                                    app.status_message = "✅ Codice incollato con mouse destro".to_string();
+                                } else {
+                                    app.input.push_str(&clipboard_text);
+                                    app.status_message = "✅ Testo incollato con mouse destro".to_string();
+                                }
+                            }
+                            Err(e) => {
+                                app.status_message = format!("⚠️  Errore mouse paste: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Gestisci eventi tastiera
+            if let Event::Key(key) = evt {
                 match app.mode {
                     AppMode::Welcome => match key.code {
                         KeyCode::Char('1') => {
@@ -240,6 +356,33 @@ where
                         _ => {}
                     },
                     AppMode::JoinChat => match key.code {
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            return Ok(());
+                        }
+                        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Incolla dalla clipboard con CTRL+V
+                            match get_clipboard_text() {
+                                Ok(clipboard_text) => {
+                                    app.input = clipboard_text.trim().to_string();
+                                    app.status_message = "✅ Codice incollato con CTRL+V".to_string();
+                                }
+                                Err(e) => {
+                                    app.status_message = format!("⚠️  Errore CTRL+V: {}", e);
+                                }
+                            }
+                        }
+                        // SHIFT+Insert per incollare (standard Linux)
+                        KeyCode::Insert if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            match get_clipboard_text() {
+                                Ok(clipboard_text) => {
+                                    app.input = clipboard_text.trim().to_string();
+                                    app.status_message = "✅ Codice incollato con SHIFT+Insert".to_string();
+                                }
+                                Err(e) => {
+                                    app.status_message = format!("⚠️  Errore SHIFT+Insert: {}", e);
+                                }
+                            }
+                        }
                         KeyCode::Char(c) => {
                             app.input.push(c);
                         }
@@ -267,6 +410,32 @@ where
                                 return Ok(());
                             }
                         }
+                        KeyCode::Up => {
+                            app.scroll_up();
+                        }
+                        KeyCode::Down => {
+                            app.scroll_down();
+                        }
+                        KeyCode::PageUp => {
+                            // Scroll veloce su
+                            for _ in 0..5 {
+                                app.scroll_up();
+                            }
+                        }
+                        KeyCode::PageDown => {
+                            // Scroll veloce giù
+                            for _ in 0..5 {
+                                app.scroll_down();
+                            }
+                        }
+                        KeyCode::Home => {
+                            // Vai all'inizio
+                            app.scroll_offset = 0;
+                        }
+                        KeyCode::End => {
+                            // Vai alla fine
+                            app.scroll_to_bottom();
+                        }
                         KeyCode::Char(c) => {
                             app.input.push(c);
                         }
@@ -290,13 +459,9 @@ where
                                                     encrypted_payload: encrypted,
                                                 })
                                                 .await?;
-
-                                                // Aggiungi ai messaggi locali
-                                                app.messages.push(ChatMessage {
-                                                    username: payload.username.clone(),
-                                                    content: payload.content.clone(),
-                                                    timestamp: payload.timestamp,
-                                                });
+                                                
+                                                // NON aggiungiamo il messaggio qui - 
+                                                // lo riceveremo dal server (anche il nostro)
                                             }
                                         }
                                     }
@@ -319,7 +484,7 @@ where
                     },
                     _ => {}
                 }
-            }
+            } // Fine gestione eventi tastiera
         }
 
         // Gestisci messaggi dal server
@@ -329,10 +494,17 @@ where
                     chat_code,
                     chat_type: _,
                 } => {
+                    // Copia il codice nella clipboard
+                    if let Err(e) = copy_to_clipboard(&chat_code) {
+                        app.status_message = format!("Chat creata! Codice: {} (copia manuale)", chat_code);
+                        eprintln!("⚠️  Impossibile copiare in clipboard: {}", e);
+                    } else {
+                        app.status_message = format!("✅ Chat creata! Codice copiato in clipboard: {}", &chat_code[..16.min(chat_code.len())]);
+                    }
+                    
                     app.current_chat_code = Some(chat_code.clone());
                     app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
                     app.mode = AppMode::Chat;
-                    app.status_message = format!("Chat creata! Codice: {}", chat_code);
                 }
                 ServerMessage::JoinedChat {
                     chat_code,
@@ -364,6 +536,8 @@ where
                                     content: payload.content.clone(),
                                     timestamp: payload.timestamp,
                                 });
+                                // Auto-scroll alla fine quando arriva un nuovo messaggio
+                                app.scroll_to_bottom();
                             }
                         }
                     }

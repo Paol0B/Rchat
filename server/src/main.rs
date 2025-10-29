@@ -6,27 +6,50 @@ use tokio::sync::mpsc;
 use tokio_rustls::rustls::pki_types::CertificateDer;
 use tokio_rustls::TlsAcceptor;
 use zeroize::Zeroize;
+use clap::Parser;
 
 mod chat;
 use chat::ChatState;
 
-const PORT: u16 = 6666;
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB max
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Porta del server
+    #[arg(short, long, default_value_t = 6666)]
+    port: u16,
+
+    /// Host del server
+    #[arg(long, default_value = "0.0.0.0")]
+    host: String,
+
+    /// Usa codici numerici a 6 cifre invece di codici base64 lunghi
+    /// ATTENZIONE: Meno sicuro (20 bit vs 256 bit di entropia)
+    #[arg(long, default_value_t = false)]
+    numeric_codes: bool,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     println!("🔒 Rchat Server v0.1.0");
-    println!("🚀 Avvio server sulla porta {}...", PORT);
+    println!("🚀 Avvio server su {}:{}...", args.host, args.port);
+    if args.numeric_codes {
+        println!("🔢 Modalità codici numerici attiva (6 cifre)");
+        println!("⚠️  ATTENZIONE: Sicurezza ridotta rispetto ai codici completi!");
+    }
 
     // Stato globale del server
-    let state = Arc::new(ChatState::new());
+    let state = Arc::new(ChatState::new(args.numeric_codes));
 
     // Configura TLS
     let tls_acceptor = configure_tls()?;
 
     // Bind sulla porta
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", PORT)).await?;
-    println!("✅ Server in ascolto su 0.0.0.0:{}", PORT);
+    let listener = TcpListener::bind(format!("{}:{}", args.host, args.port)).await?;
+    println!("✅ Server in ascolto su {}:{}", args.host, args.port);
     println!("⚠️  ATTENZIONE: Tutti i dati sono volatili e NON persistiti su disco");
     println!();
 
@@ -112,7 +135,7 @@ async fn handle_client(
                 chat_type,
                 username,
             } => {
-                let chat_code = common::generate_chat_code();
+                let chat_code = state.generate_chat_code();
                 state.create_chat(chat_code.clone(), chat_type.clone()).await;
                 let _ = state.join_chat(&chat_code, username.clone(), tx.clone()).await;
 

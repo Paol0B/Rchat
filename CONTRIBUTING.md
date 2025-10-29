@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Rchat! 🎉
 1. **Fork** the repository
 2. **Clone** your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Rchat.git
+   git clone https://github.com/Paol0B/Rchat.git
    cd Rchat
    ```
 3. **Build** the project:
