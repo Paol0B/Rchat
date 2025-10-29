@@ -1,5 +1,5 @@
 use clap::Parser;
-use common::{ChatKey, ChatType, ClientMessage, MessagePayload, ServerMessage, chat_code_to_room_id, generate_chat_code, generate_numeric_chat_code};
+use common::{ChatKey, ChainKey, IdentityKey, ChatType, ClientMessage, MessagePayload, ServerMessage, chat_code_to_room_id, generate_chat_code, generate_numeric_chat_code};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
@@ -477,22 +477,56 @@ where
                                 let content = app.input.clone();
                                 app.input.clear();
 
-                                // Cripta il messaggio
+                                // Encrypt and sign the message
                                 if let Some(ref chat_code) = app.current_chat_code {
                                     if let Some(ref key) = app.chat_key {
-                                        let room_id = chat_code_to_room_id(chat_code);
-                                        let payload =
-                                            MessagePayload::new(app.username.clone(), content);
-                                        if let Ok(serialized) = bincode::serialize(&payload) {
-                                            if let Ok(encrypted) = key.encrypt(&serialized) {
-                                                tx.send(ClientMessage::SendMessage {
-                                                    room_id,
-                                                    encrypted_payload: encrypted,
-                                                })
-                                                .await?;
-                                                
-                                                // NON aggiungiamo il messaggio qui - 
-                                                // lo riceveremo dal server (anche il nostro)
+                                        if let Some(ref mut chain_key) = app.chain_key {
+                                            let room_id = chat_code_to_room_id(chat_code);
+                                            
+                                            // Get next chain key for forward secrecy
+                                            let message_key = chain_key.next();
+                                            let chain_index = chain_key.index() - 1; // index after next()
+                                            
+                                            // Create signature data
+                                            let mut sig_data = Vec::new();
+                                            sig_data.extend_from_slice(content.as_bytes());
+                                            sig_data.extend_from_slice(&app.sequence_number.to_le_bytes());
+                                            sig_data.extend_from_slice(&chain_index.to_le_bytes());
+                                            
+                                            // Sign the message
+                                            let signature = app.identity_key.sign(&sig_data);
+                                            let public_key = app.identity_key.public_key_bytes();
+                                            
+                                            let payload = MessagePayload::new(
+                                                app.username.clone(),
+                                                content.clone(),
+                                                app.sequence_number,
+                                                public_key,
+                                                signature,
+                                                chain_index,
+                                            );
+                                            
+                                            // Add our own message to the UI immediately (verified since it's ours)
+                                            app.messages.push(ChatMessage {
+                                                username: app.username.clone(),
+                                                content: content.clone(),
+                                                timestamp: std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap()
+                                                    .as_secs() as i64,
+                                                verified: true, // Our own messages are always verified
+                                            });
+                                            
+                                            app.sequence_number += 1;
+                                            
+                                            if let Ok(serialized) = bincode::serialize(&payload) {
+                                                if let Ok(encrypted) = key.encrypt_with_chain(&serialized, &message_key) {
+                                                    tx.send(ClientMessage::SendMessage {
+                                                        room_id,
+                                                        encrypted_payload: encrypted,
+                                                    })
+                                                    .await?;
+                                                }
                                             }
                                         }
                                     }
@@ -538,6 +572,8 @@ where
                         
                         app.current_chat_code = Some(chat_code.clone());
                         app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
+                        app.chain_key = ChainKey::from_chat_code(&chat_code).ok();
+                        app.sequence_number = 0;
                         app.mode = AppMode::Chat;
                         app.scroll_to_bottom(); // Auto-scroll on enter
                     }
@@ -553,6 +589,8 @@ where
                     
                     app.current_chat_code = Some(chat_code.clone());
                     app.chat_key = ChatKey::derive_from_code(&chat_code).ok();
+                    app.chain_key = ChainKey::from_chat_code(&chat_code).ok();
+                    app.sequence_number = 0;
                     app.mode = AppMode::Chat;
                     app.scroll_to_bottom(); // Auto-scroll on enter
                     app.status_message = format!(
@@ -568,16 +606,54 @@ where
                     encrypted_payload, ..
                 } => {
                     if let Some(ref key) = app.chat_key {
-                        if let Ok(decrypted) = key.decrypt(&encrypted_payload) {
-                            if let Ok(payload) =
-                                bincode::deserialize::<MessagePayload>(&decrypted)
-                            {
+                        if let Some(ref mut chain_key) = app.chain_key {
+                            // Try decrypting with current and nearby chain keys
+                            let mut decrypted_payload = None;
+                            let current_index = chain_key.index();
+                            
+                            // Try current key and next few keys (for out-of-order messages)
+                            for offset in 0..5 {
+                                let test_index = current_index + offset;
+                                let mut test_chain = chain_key.clone();
+                                test_chain.advance_to(test_index);
+                                let test_key = test_chain.next();
+                                
+                                if let Ok(decrypted) = key.decrypt_with_chain(&encrypted_payload, &test_key) {
+                                    if let Ok(payload) = bincode::deserialize::<MessagePayload>(&decrypted) {
+                                        // Verify signature
+                                        let mut sig_data = Vec::new();
+                                        sig_data.extend_from_slice(payload.content.as_bytes());
+                                        sig_data.extend_from_slice(&payload.sequence_number.to_le_bytes());
+                                        sig_data.extend_from_slice(&payload.chain_key_index.to_le_bytes());
+                                        
+                                        let verified = IdentityKey::verify(
+                                            &payload.sender_public_key,
+                                            &sig_data,
+                                            &payload.signature
+                                        ).is_ok();
+                                        
+                                        decrypted_payload = Some((payload, verified, test_index));
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if let Some((payload, verified, used_index)) = decrypted_payload {
+                                // Advance chain key to the used index
+                                chain_key.advance_to(used_index);
+                                
                                 app.messages.push(ChatMessage {
                                     username: payload.username.clone(),
                                     content: payload.content.clone(),
                                     timestamp: payload.timestamp,
+                                    verified,
                                 });
-                                // Auto-scroll alla fine quando arriva un nuovo messaggio
+                                
+                                if !verified {
+                                    app.status_message = "⚠️ Warning: Unverified message signature!".to_string();
+                                }
+                                
+                                // Auto-scroll on new message
                                 app.scroll_to_bottom();
                             }
                         }

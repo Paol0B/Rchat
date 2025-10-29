@@ -6,12 +6,20 @@ Modern chat system in Rust with complete end-to-end encryption, asynchronous cli
 
 ### Extreme Security (Military-Grade)
 - **End-to-End Encryption (E2EE)** using **XChaCha20-Poly1305** (192-bit nonce)
+- **Forward Secrecy** with KDF ratcheting: new encryption key per message
+  - Even if current key is compromised, past messages remain secure
+  - BLAKE3-based key derivation chain for fast ratcheting
+- **Message Signing** with **Ed25519** for sender verification
+  - Every message cryptographically signed by sender
+  - Prevents spoofing and impersonation attacks
+  - Visual verification indicators (✓ verified, ⚠ unverified)
 - **Argon2id** for key derivation (Password Hashing Competition winner)
   - 128 MB memory for GPU/ASIC attack resistance
   - 4 iterations + 8 parallel threads
   - Protection against timing attacks and side-channel attacks
 - **BLAKE3 + SHA3-512** double hashing for room IDs
 - **512-bit chat codes** (vs 256-bit standard) for quantum resistance
+- **Sequence numbers** for message ordering and replay attack protection
 - **TLS 1.3** for all client-server connections (rustls)
 - **No persistent storage**: all data exists only in RAM
 - **Automatic zeroization** of keys and sensitive data (zeroize crate)
@@ -266,6 +274,9 @@ Rchat/
 ## 🛡️ Security Guarantees
 
 ✅ **Complete E2EE**: Server cannot read messages  
+✅ **Forward Secrecy**: Each message uses a new derived key - past messages secure even if current key compromised  
+✅ **Message Authentication**: Ed25519 signatures verify sender identity and prevent spoofing  
+✅ **Replay Protection**: Sequence numbers prevent message replay attacks  
 ✅ **Server zero-knowledge**: Server never knows original chat code, only double hash (BLAKE3+SHA3-512)  
 ✅ **Quantum-resistant**: 512-bit chat codes for resistance to future quantum computers  
 ✅ **GPU-resistant**: Argon2id with 128MB memory makes GPU attacks impractical  
@@ -279,6 +290,7 @@ Rchat/
 ✅ **AEAD**: XChaCha20-Poly1305 ensures authenticity and confidentiality  
 ✅ **Client-side key derivation**: Keys derived only on clients, never on server  
 ✅ **Double hashing**: BLAKE3 + SHA3-512 for room routing (no length-extension attacks)  
+✅ **Out-of-order protection**: Message chain synchronization handles network reordering  
 
 ## ⚠️ Limitations and Disclaimer
 - **Self-signed certificates**: Replace with valid CA certificates
@@ -326,8 +338,9 @@ You can use Wireshark to confirm that:
 | rustls | 0.23 | TLS 1.3 |
 | **chacha20poly1305** | 0.10 | **E2EE AEAD cipher (192-bit nonce)** |
 | **argon2** | 0.5 | **Key derivation (Argon2id, 128MB memory)** |
-| **blake3** | 1.5 | **Modern hash function** |
+| **blake3** | 1.5 | **Modern hash function & KDF ratcheting** |
 | **sha3** | 0.10 | **SHA3-512 (Keccak, NIST standard)** |
+| **ed25519-dalek** | 2.2 | **Ed25519 digital signatures for message authentication** |
 | zeroize | 1.8 | Memory zeroization |
 | ratatui | 0.29 | TUI framework |
 | serde | 1.0 | Serialization |

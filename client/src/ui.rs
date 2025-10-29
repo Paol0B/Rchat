@@ -1,4 +1,4 @@
-use common::ChatKey;
+use common::{ChatKey, IdentityKey, ChainKey};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -7,6 +7,8 @@ use ratatui::{
     Frame,
 };
 use zeroize::Zeroize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
@@ -21,6 +23,7 @@ pub struct ChatMessage {
     pub username: String,
     pub content: String,
     pub timestamp: i64,
+    pub verified: bool, // Message signature verified
 }
 
 pub struct App {
@@ -30,6 +33,9 @@ pub struct App {
     pub current_chat_code: Option<String>,
     pub pending_chat_code: Option<String>, // Codice chat generato localmente in attesa di conferma
     pub chat_key: Option<ChatKey>,
+    pub identity_key: IdentityKey,        // Ed25519 keypair for signing
+    pub chain_key: Option<ChainKey>,      // Forward secrecy chain
+    pub sequence_number: u64,             // Message counter
     pub messages: Vec<ChatMessage>,
     pub status_message: String,
     pub scroll_offset: usize,
@@ -45,6 +51,9 @@ impl App {
             current_chat_code: None,
             pending_chat_code: None,
             chat_key: None,
+            identity_key: IdentityKey::generate(),
+            chain_key: None,
+            sequence_number: 0,
             messages: Vec::new(),
             status_message: String::new(),
             scroll_offset: 0,
@@ -78,6 +87,32 @@ impl Drop for App {
         self.input.zeroize();
         self.messages.clear();
     }
+}
+
+/// Generate a consistent color for a username based on its hash
+fn username_color(username: &str) -> Color {
+    let mut hasher = DefaultHasher::new();
+    username.hash(&mut hasher);
+    let hash = hasher.finish();
+    
+    // Use hash to select from a palette of distinguishable colors
+    // Avoid black, white, and colors too similar to system colors
+    let colors = [
+        Color::Cyan,
+        Color::Green,
+        Color::Blue,
+        Color::Magenta,
+        Color::Red,
+        Color::LightCyan,
+        Color::LightGreen,
+        Color::LightBlue,
+        Color::LightMagenta,
+        Color::LightRed,
+        Color::Yellow,
+        Color::LightYellow,
+    ];
+    
+    colors[(hash as usize) % colors.len()]
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -267,8 +302,21 @@ fn draw_chat(f: &mut Frame, app: &App) {
         .take(end_idx - start_idx)
         .map(|m| {
             let time = format_timestamp(m.timestamp);
-            let content = format!("[{}] <{}>: {}", time, m.username, m.content);
-            ListItem::new(content).style(Style::default().fg(Color::White))
+            let verified_mark = if m.verified { "✓" } else { "⚠" };
+            let verify_color = if m.verified { Color::White } else { Color::Yellow };
+            let user_color = username_color(&m.username);
+            
+            // Create a line with colored spans
+            let line = Line::from(vec![
+                Span::styled(format!("[{}] ", time), Style::default().fg(Color::Gray)),
+                Span::styled(format!("{} ", verified_mark), Style::default().fg(verify_color)),
+                Span::styled("<", Style::default().fg(Color::Gray)),
+                Span::styled(m.username.clone(), Style::default().fg(user_color).add_modifier(Modifier::BOLD)),
+                Span::styled(">: ", Style::default().fg(Color::Gray)),
+                Span::styled(m.content.clone(), Style::default().fg(verify_color)),
+            ]);
+            
+            ListItem::new(line)
         })
         .collect();
 

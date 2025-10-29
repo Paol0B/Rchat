@@ -72,20 +72,36 @@ pub enum ServerMessage {
 }
 
 /// Message payload before encryption
+/// Now includes forward secrecy and sender verification
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct MessagePayload {
     pub username: String,
     pub content: String,
     pub timestamp: i64,
+    pub sequence_number: u64,           // For message ordering and replay protection
+    pub sender_public_key: Vec<u8>,     // Ed25519 public key for sender verification
+    pub signature: Vec<u8>,             // Ed25519 signature over (content || timestamp || sequence)
+    pub chain_key_index: u64,           // For forward secrecy ratcheting
 }
 
 impl MessagePayload {
-    pub fn new(username: String, content: String) -> Self {
+    pub fn new(
+        username: String,
+        content: String,
+        sequence_number: u64,
+        sender_public_key: Vec<u8>,
+        signature: Vec<u8>,
+        chain_key_index: u64,
+    ) -> Self {
         Self {
             username,
             content,
             timestamp: chrono::Utc::now().timestamp(),
+            sequence_number,
+            sender_public_key,
+            signature,
+            chain_key_index,
         }
     }
 }
