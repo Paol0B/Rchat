@@ -23,6 +23,38 @@ use tokio_rustls::TlsConnector;
 mod ui;
 use ui::*;
 
+/// Disabilita l'echo del terminale su Windows
+/// Su Windows, crossterm::enable_raw_mode() non disabilita completamente l'echo,
+/// quindi dobbiamo farlo manualmente usando le API Windows
+#[cfg(windows)]
+fn disable_windows_echo() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::windows::io::AsRawHandle;
+    use std::io::stdout;
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, SetConsoleMode, 
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT
+    };
+
+    unsafe {
+        let handle = stdout().as_raw_handle() as isize;
+        let mut mode: u32 = 0;
+        
+        if GetConsoleMode(handle, &mut mode) != 0 {
+            // Disabilita ENABLE_ECHO_INPUT per evitare la doppia visualizzazione
+            mode &= !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+            SetConsoleMode(handle, mode);
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn disable_windows_echo() -> Result<(), Box<dyn std::error::Error>> {
+    // Non necessario su Unix/Linux
+    Ok(())
+}
+
 /// Copia testo nella clipboard
 fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     use arboard::Clipboard;
@@ -70,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup terminale
     enable_raw_mode()?;
+    disable_windows_echo()?; // Fix per doppio carattere su Windows
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);

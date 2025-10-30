@@ -154,7 +154,7 @@ fn draw_welcome(f: &mut Frame) {
         .split(f.area());
 
     // ASCII Art
-    let ascii_art = vec![
+    let ascii_art = [
         "╦═╗┌─┐┬ ┬┌─┐┌┬┐",
         "╠╦╝│  ├─┤├─┤ │ ",
         "╩╚═└─┘┴ ┴┴ ┴ ┴ ",
@@ -181,7 +181,7 @@ fn draw_welcome(f: &mut Frame) {
     f.render_widget(art, chunks[0]);
 
     // Menu
-    let menu_items = vec![
+    let menu_items = [
         "Press:",
         "",
         "[1] Create new chat",
@@ -213,7 +213,7 @@ fn draw_create_chat(f: &mut Frame) {
         .constraints([Constraint::Min(5), Constraint::Length(3)])
         .split(f.area());
 
-    let menu_items = vec![
+    let menu_items = [
         "Select chat type:",
         "",
         "[1] 1:1 Chat (max 2 participants)",

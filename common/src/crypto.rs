@@ -319,6 +319,7 @@ impl ChainKey {
 
     /// Derive next key in the chain (forward secrecy)
     /// Uses BLAKE3 for fast KDF ratcheting
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> [u8; 32] {
         let mut hasher = Blake3Hasher::new();
         hasher.update(b"rchat-chain-ratchet:");
