@@ -29,20 +29,24 @@ use ui::*;
 #[cfg(windows)]
 fn disable_windows_echo() -> Result<(), Box<dyn std::error::Error>> {
     use std::os::windows::io::AsRawHandle;
-    use std::io::stdout;
+    use std::io::stdin;
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, SetConsoleMode, 
         ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT
     };
 
     unsafe {
-        let handle = stdout().as_raw_handle() as isize;
+        let handle = stdin().as_raw_handle() as isize;
         let mut mode: u32 = 0;
         
         if GetConsoleMode(handle, &mut mode) != 0 {
             // Disabilita ENABLE_ECHO_INPUT per evitare la doppia visualizzazione
             mode &= !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
-            SetConsoleMode(handle, mode);
+            if SetConsoleMode(handle, mode) == 0 {
+                return Err("Failed to set console mode".into());
+            }
+        } else {
+            return Err("Failed to get console mode".into());
         }
     }
     
