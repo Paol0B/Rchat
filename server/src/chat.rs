@@ -187,7 +187,7 @@ impl ChatState {
             if verbose {
                 // Count how many will receive
                 let mut sent_to = 0;
-                for (cid, _) in &room.participants {
+                for cid in room.participants.keys() {
                     if let Some(exclude) = exclude_client {
                         if cid == exclude {
                             continue;
