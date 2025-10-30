@@ -36,7 +36,7 @@ fn disable_windows_echo() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     unsafe {
-        let handle = stdin().as_raw_handle() as isize;
+        let handle = stdin().as_raw_handle();
         let mut mode: u32 = 0;
         
         if GetConsoleMode(handle, &mut mode) != 0 {
