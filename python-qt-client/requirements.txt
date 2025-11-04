@@ -1,0 +1,6 @@
+PyQt6>=6.5.0
+PyQt6-Qt6>=6.5.0
+cryptography>=42.0.0
+msgpack>=1.0.0
+argon2-cffi>=25.0.0
+PyNaCl>=1.6.0
