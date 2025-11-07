@@ -367,3 +367,11 @@ fn derive_key_material(input: &str, salt: &[u8]) -> Result<[u8; 32], CryptoError
     Ok(output)
 }
 
+/// Constant-time comparison to prevent timing attacks
+pub fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    use subtle::ConstantTimeEq;
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
+}

@@ -3,15 +3,13 @@ Modulo protocollo per RChat - Implementazione Python pura
 Compatibile con il formato bincode del server Rust usando MessagePack
 """
 
-import msgpack
-import time
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 
 @dataclass
 class MessagePayload:
-    """Payload del messaggio prima della crittografia"""
+    """Payload del messaggio prima della crittografia - IDENTICO a Rust"""
     username: str
     content: str
     timestamp: int
@@ -19,6 +17,34 @@ class MessagePayload:
     sender_public_key: bytes
     signature: bytes
     chain_key_index: int
+    message_hash: bytes  # BLAKE3 hash for commitment/integrity (AGGIUNTO per compatibilità Rust)
+    
+    @classmethod
+    def create(cls, username: str, content: str, sequence_number: int,
+               sender_public_key: bytes, signature: bytes, chain_key_index: int) -> 'MessagePayload':
+        """Crea MessagePayload con message_hash calcolato automaticamente (IDENTICO a Rust)"""
+        import blake3
+        import time
+        
+        # Calculate message hash for commitment (IDENTICO a Rust)
+        hasher = blake3.blake3()
+        hasher.update(b"rchat-v3-message-commitment:")
+        hasher.update(username.encode('utf-8'))
+        hasher.update(content.encode('utf-8'))
+        hasher.update(sequence_number.to_bytes(8, 'little'))
+        hasher.update(chain_key_index.to_bytes(8, 'little'))
+        message_hash = hasher.digest()
+        
+        return cls(
+            username=username,
+            content=content,
+            timestamp=int(time.time()),
+            sequence_number=sequence_number,
+            sender_public_key=sender_public_key,
+            signature=signature,
+            chain_key_index=chain_key_index,
+            message_hash=message_hash
+        )
     
     def to_bytes(self) -> bytes:
         """Serializza a bytes usando struct binario (compatibile bincode)"""
@@ -35,8 +61,8 @@ class MessagePayload:
         result += len(content_bytes).to_bytes(8, 'little')
         result += content_bytes
         
-        # u64 little endian
-        result += self.timestamp.to_bytes(8, 'little')
+        # i64 little endian (timestamp è SIGNED in Rust!)
+        result += self.timestamp.to_bytes(8, 'little', signed=True)
         
         # u64 little endian
         result += self.sequence_number.to_bytes(8, 'little')
@@ -51,6 +77,10 @@ class MessagePayload:
         
         # u64 little endian
         result += self.chain_key_index.to_bytes(8, 'little')
+        
+        # Vec<u8>: lunghezza u64 LE + bytes (message_hash - AGGIUNTO)
+        result += len(self.message_hash).to_bytes(8, 'little')
+        result += self.message_hash
         
         return result
     
@@ -71,8 +101,8 @@ class MessagePayload:
         content = data[pos:pos+content_len].decode('utf-8')
         pos += content_len
         
-        # Leggi timestamp
-        timestamp = int.from_bytes(data[pos:pos+8], 'little')
+        # Leggi timestamp (i64 SIGNED in Rust!)
+        timestamp = int.from_bytes(data[pos:pos+8], 'little', signed=True)
         pos += 8
         
         # Leggi sequence_number
@@ -93,6 +123,12 @@ class MessagePayload:
         
         # Leggi chain_key_index
         chain_key_index = int.from_bytes(data[pos:pos+8], 'little')
+        pos += 8
+        
+        # Leggi message_hash (AGGIUNTO per compatibilità Rust)
+        hash_len = int.from_bytes(data[pos:pos+8], 'little')
+        pos += 8
+        message_hash = data[pos:pos+hash_len]
         
         return cls(
             username=username,
@@ -101,7 +137,8 @@ class MessagePayload:
             sequence_number=sequence_number,
             sender_public_key=sender_public_key,
             signature=signature,
-            chain_key_index=chain_key_index
+            chain_key_index=chain_key_index,
+            message_hash=message_hash
         )
 
 
