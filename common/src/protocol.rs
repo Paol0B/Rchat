@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
+use blake3;
 
 /// Supported chat types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -78,7 +79,7 @@ pub enum ServerMessage {
 }
 
 /// Message payload before encryption
-/// Now includes forward secrecy and sender verification
+/// Now includes forward secrecy, sender verification, and replay protection
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct MessagePayload {
@@ -89,6 +90,7 @@ pub struct MessagePayload {
     pub sender_public_key: Vec<u8>,     // Ed25519 public key for sender verification
     pub signature: Vec<u8>,             // Ed25519 signature over (content || timestamp || sequence)
     pub chain_key_index: u64,           // For forward secrecy ratcheting
+    pub message_hash: Vec<u8>,          // BLAKE3 hash of message for commitment/integrity
 }
 
 impl MessagePayload {
@@ -100,6 +102,15 @@ impl MessagePayload {
         signature: Vec<u8>,
         chain_key_index: u64,
     ) -> Self {
+        // Calculate message hash for commitment
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"rchat-v3-message-commitment:");
+        hasher.update(username.as_bytes());
+        hasher.update(content.as_bytes());
+        hasher.update(&sequence_number.to_le_bytes());
+        hasher.update(&chain_key_index.to_le_bytes());
+        let message_hash = hasher.finalize().as_bytes().to_vec();
+        
         Self {
             username,
             content,
@@ -108,7 +119,33 @@ impl MessagePayload {
             sender_public_key,
             signature,
             chain_key_index,
+            message_hash,
         }
+    }
+    
+    /// Validate timestamp is within acceptable window (±5 minutes)
+    /// Prevents replay attacks with old messages
+    pub fn validate_timestamp(&self) -> bool {
+        const MAX_CLOCK_SKEW_SECONDS: i64 = 5 * 60; // 5 minutes
+        
+        let now = chrono::Utc::now().timestamp();
+        let diff = (now - self.timestamp).abs();
+        
+        diff <= MAX_CLOCK_SKEW_SECONDS
+    }
+    
+    /// Verify message hash commitment
+    pub fn verify_commitment(&self) -> bool {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"rchat-v3-message-commitment:");
+        hasher.update(self.username.as_bytes());
+        hasher.update(self.content.as_bytes());
+        hasher.update(&self.sequence_number.to_le_bytes());
+        hasher.update(&self.chain_key_index.to_le_bytes());
+        let expected_hash = hasher.finalize();
+        
+        use crate::crypto::constant_time_compare;
+        constant_time_compare(&self.message_hash, expected_hash.as_bytes())
     }
 }
 

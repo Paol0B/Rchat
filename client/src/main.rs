@@ -755,6 +755,18 @@ where
                                             continue; // Wrong index, keep trying
                                         }
                                         
+                                        // SECURITY: Validate timestamp window (prevent replay attacks)
+                                        if !payload.validate_timestamp() {
+                                            app.status_message = "⚠️ Message rejected: timestamp outside valid window".to_string();
+                                            continue;
+                                        }
+                                        
+                                        // SECURITY: Verify message commitment (integrity check)
+                                        if !payload.verify_commitment() {
+                                            app.status_message = "⚠️ Message rejected: commitment verification failed".to_string();
+                                            continue;
+                                        }
+                                        
                                         // Verify signature
                                         let mut sig_data = Vec::new();
                                         sig_data.extend_from_slice(payload.content.as_bytes());
