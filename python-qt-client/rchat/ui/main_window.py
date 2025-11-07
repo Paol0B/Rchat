@@ -220,33 +220,34 @@ class MessageBubble(QFrame):
     
     def __init__(self, message_data: dict, is_own: bool, parent=None):
         super().__init__(parent)
-        self.setObjectName("MessageFrame")
+        self.is_own = is_own
+        self.message_data = message_data
         
-        layout = QVBoxLayout()
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(4)
+        # Container principale con allineamento
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(8, 4, 8, 4)
+        main_layout.setSpacing(0)
         
-        # Header con username e timestamp
-        header_layout = QHBoxLayout()
-        
-        username_label = QLabel(message_data['username'])
-        username_font = QFont()
-        username_font.setBold(True)
-        username_label.setFont(username_font)
-        
-        # Color coding per username
         if is_own:
-            username_label.setStyleSheet("color: #11111b;")
-        else:
-            username_label.setStyleSheet(f"color: {self._get_username_color(message_data['username'])};")
+            main_layout.addStretch()
         
-        time_label = QLabel(self._format_timestamp(message_data['timestamp']))
-        time_label.setStyleSheet("color: #6c7086; font-size: 9pt;")
+        # Bolla messaggio
+        bubble_frame = QFrame()
+        bubble_frame.setObjectName("MyMessageBubble" if is_own else "OtherMessageBubble")
         
-        header_layout.addWidget(username_label)
-        header_layout.addStretch()
-        header_layout.addWidget(time_label)
-        layout.addLayout(header_layout)
+        bubble_layout = QVBoxLayout()
+        bubble_layout.setContentsMargins(16, 10, 16, 10)
+        bubble_layout.setSpacing(6)
+        
+        # Header con username (solo per messaggi degli altri)
+        if not is_own:
+            username_label = QLabel(message_data['username'])
+            username_font = QFont()
+            username_font.setBold(True)
+            username_font.setPointSize(10)
+            username_label.setFont(username_font)
+            username_label.setStyleSheet(f"color: {self._get_username_color(message_data['username'])}; padding: 0px;")
+            bubble_layout.addWidget(username_label)
         
         # Contenuto messaggio
         content = QLabel(message_data['content'])
@@ -255,45 +256,89 @@ class MessageBubble(QFrame):
             Qt.TextInteractionFlag.TextSelectableByMouse |
             Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
-        if is_own:
-            content.setStyleSheet("color: #11111b;")
-        layout.addWidget(content)
+        content_font = QFont()
+        content_font.setPointSize(11)
+        content.setFont(content_font)
         
-        # Status indicator
+        if is_own:
+            content.setStyleSheet("color: #1e1e2e; padding: 0px; background: transparent;")
+        else:
+            content.setStyleSheet("color: #cdd6f4; padding: 0px; background: transparent;")
+        
+        bubble_layout.addWidget(content)
+        
+        # Footer con timestamp e status
+        footer_layout = QHBoxLayout()
+        footer_layout.setSpacing(6)
+        
+        time_label = QLabel(self._format_timestamp(message_data['timestamp']))
+        time_font = QFont()
+        time_font.setPointSize(8)
+        time_label.setFont(time_font)
+        
+        if is_own:
+            time_label.setStyleSheet("color: #45475a; background: transparent;")
+        else:
+            time_label.setStyleSheet("color: #6c7086; background: transparent;")
+        
+        # Status indicator (solo per messaggi propri)
         status_label = QLabel()
-        status_label.setStyleSheet("font-size: 9pt;")
-        if not message_data.get('sent', True):
-            status_label.setText("✗ Non inviato")
-            status_label.setStyleSheet("color: #f38ba8; font-size: 9pt;")
-        elif message_data.get('verified', True):
-            status_label.setText("✓")
-            status_label.setStyleSheet("color: #a6e3a1; font-size: 9pt;")
-        else:
-            status_label.setText("⚠ Non verificato")
-            status_label.setStyleSheet("color: #f9e2af; font-size: 9pt;")
+        status_font = QFont()
+        status_font.setPointSize(9)
+        status_label.setFont(status_font)
         
-        layout.addWidget(status_label, alignment=Qt.AlignmentFlag.AlignRight)
-        
-        self.setLayout(layout)
-        
-        # Styling per messaggi propri vs altri
         if is_own:
-            self.setObjectName("MyMessageFrame")
-            self.setStyleSheet("""
-                #MyMessageFrame {
-                    background-color: #89b4fa;
-                    border-radius: 12px;
-                    margin: 4px 4px 4px 60px;
+            if not message_data.get('sent', True):
+                status_label.setText("✗")
+                status_label.setStyleSheet("color: #f38ba8; background: transparent;")
+                status_label.setToolTip("Messaggio non inviato")
+            elif message_data.get('verified', True):
+                status_label.setText("✓✓")
+                status_label.setStyleSheet("color: #45475a; background: transparent;")
+                status_label.setToolTip("Messaggio inviato e verificato")
+            else:
+                status_label.setText("⚠")
+                status_label.setStyleSheet("color: #f9e2af; background: transparent;")
+                status_label.setToolTip("Messaggio non verificato")
+        
+        footer_layout.addWidget(time_label)
+        if is_own:
+            footer_layout.addWidget(status_label)
+        footer_layout.addStretch()
+        
+        bubble_layout.addLayout(footer_layout)
+        bubble_frame.setLayout(bubble_layout)
+        
+        # Applica stile alla bolla
+        if is_own:
+            bubble_frame.setStyleSheet("""
+                #MyMessageBubble {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #89b4fa, stop:1 #74c7ec);
+                    border-radius: 18px;
+                    border-top-right-radius: 4px;
+                    max-width: 500px;
                 }
             """)
         else:
-            self.setStyleSheet("""
-                #MessageFrame {
+            bubble_frame.setStyleSheet("""
+                #OtherMessageBubble {
                     background-color: #313244;
-                    border-radius: 12px;
-                    margin: 4px 60px 4px 4px;
+                    border: 1px solid #45475a;
+                    border-radius: 18px;
+                    border-top-left-radius: 4px;
+                    max-width: 500px;
                 }
             """)
+        
+        main_layout.addWidget(bubble_frame)
+        
+        if not is_own:
+            main_layout.addStretch()
+        
+        self.setLayout(main_layout)
+        self.setStyleSheet("background: transparent;")
+        self.setMaximumWidth(800)
     
     def _format_timestamp(self, timestamp: int) -> str:
         """Formatta timestamp Unix"""
@@ -311,6 +356,54 @@ class MessageBubble(QFrame):
         return colors[hash_val % len(colors)]
 
 
+class SystemMessage(QFrame):
+    """Messaggio di sistema con stile speciale"""
+    
+    def __init__(self, content: str, timestamp: int, parent=None):
+        super().__init__(parent)
+        self.setObjectName("SystemMessageFrame")
+        
+        layout = QHBoxLayout()
+        layout.setContentsMargins(16, 8, 16, 8)
+        
+        # Icona
+        icon_label = QLabel("ℹ️")
+        icon_label.setStyleSheet("font-size: 14pt; background: transparent;")
+        layout.addWidget(icon_label)
+        
+        # Contenuto
+        content_layout = QVBoxLayout()
+        content_layout.setSpacing(2)
+        
+        content_label = QLabel(content)
+        content_label.setWordWrap(True)
+        content_label.setStyleSheet("color: #a6e3a1; font-size: 10pt; background: transparent;")
+        content_layout.addWidget(content_label)
+        
+        time_label = QLabel(self._format_timestamp(timestamp))
+        time_label.setStyleSheet("color: #6c7086; font-size: 8pt; background: transparent;")
+        content_layout.addWidget(time_label)
+        
+        layout.addLayout(content_layout)
+        layout.addStretch()
+        
+        self.setLayout(layout)
+        self.setStyleSheet("""
+            #SystemMessageFrame {
+                background-color: rgba(69, 71, 90, 0.3);
+                border-radius: 12px;
+                border: 1px dashed rgba(166, 227, 161, 0.3);
+                margin: 4px 80px;
+            }
+        """)
+        self.setMaximumWidth(600)
+    
+    def _format_timestamp(self, timestamp: int) -> str:
+        """Formatta timestamp Unix"""
+        dt = datetime.fromtimestamp(timestamp)
+        return dt.strftime("%H:%M")
+
+
 class ChatScreen(QWidget):
     """Schermata chat principale"""
     
@@ -321,24 +414,35 @@ class ChatScreen(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout()
-        layout.setSpacing(8)
+        layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Header
         header = QFrame()
         header.setObjectName("TitleBar")
-        header.setFixedHeight(60)
+        header.setFixedHeight(70)
         header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(20, 10, 20, 10)
+        
+        # Info chat con icona e dettagli
+        info_container = QVBoxLayout()
+        info_container.setSpacing(2)
         
         self.chat_info_label = QLabel("🔒 Chat Crittografata")
         self.chat_info_label.setObjectName("TitleLabel")
-        header_layout.addWidget(self.chat_info_label)
+        info_container.addWidget(self.chat_info_label)
         
+        self.participants_label = QLabel("Connesso")
+        self.participants_label.setStyleSheet("color: #a6e3a1; font-size: 9pt;")
+        info_container.addWidget(self.participants_label)
+        
+        header_layout.addLayout(info_container)
         header_layout.addStretch()
         
         self.leave_btn = QPushButton("🚪 Esci")
         self.leave_btn.setObjectName("DangerButton")
-        self.leave_btn.setFixedHeight(40)
+        self.leave_btn.setFixedHeight(45)
+        self.leave_btn.setFixedWidth(120)
         header_layout.addWidget(self.leave_btn)
         
         header.setLayout(header_layout)
@@ -348,54 +452,120 @@ class ChatScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setObjectName("ChatArea")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         self.messages_container = QWidget()
+        self.messages_container.setObjectName("MessagesContainer")
         self.messages_layout = QVBoxLayout()
-        self.messages_layout.setSpacing(8)
+        self.messages_layout.setSpacing(12)
+        self.messages_layout.setContentsMargins(16, 16, 16, 16)
         self.messages_layout.addStretch()
         self.messages_container.setLayout(self.messages_layout)
         
         scroll.setWidget(self.messages_container)
         layout.addWidget(scroll, stretch=1)
         
-        # Area input
+        # Area input con design moderno
         input_frame = QFrame()
+        input_frame.setStyleSheet("""
+            QFrame {
+                background-color: #11111b;
+                border-top: 2px solid #313244;
+                padding: 16px;
+            }
+        """)
         input_layout = QHBoxLayout()
         input_layout.setSpacing(12)
+        input_layout.setContentsMargins(20, 12, 20, 12)
         
         self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("Scrivi un messaggio...")
-        self.message_input.setMinimumHeight(50)
+        self.message_input.setPlaceholderText("💬 Scrivi un messaggio...")
+        self.message_input.setMinimumHeight(55)
+        self.message_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e2e;
+                border: 2px solid #313244;
+                border-radius: 27px;
+                padding: 0 20px;
+                color: #cdd6f4;
+                font-size: 11pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #89b4fa;
+            }
+        """)
         self.message_input.returnPressed.connect(self._on_send_clicked)
         input_layout.addWidget(self.message_input)
         
-        self.send_btn = QPushButton("📤 Invia")
-        self.send_btn.setMinimumSize(100, 50)
+        self.send_btn = QPushButton("📤")
+        self.send_btn.setMinimumSize(55, 55)
+        self.send_btn.setMaximumSize(55, 55)
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #89b4fa, stop:1 #74c7ec);
+                border: none;
+                border-radius: 27px;
+                font-size: 18pt;
+                color: #1e1e2e;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #74c7ec, stop:1 #94e2d5);
+            }
+            QPushButton:pressed {
+                background: #89b4fa;
+            }
+            QPushButton:disabled {
+                background-color: #45475a;
+                color: #6c7086;
+            }
+        """)
         self.send_btn.clicked.connect(self._on_send_clicked)
         input_layout.addWidget(self.send_btn)
         
         input_frame.setLayout(input_layout)
         layout.addWidget(input_frame)
         
-        # Status bar
+        # Status bar minimalista
         self.status_label = QLabel()
         self.status_label.setObjectName("StatusLabel")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setFixedHeight(30)
+        self.status_label.setFixedHeight(28)
+        self.status_label.setStyleSheet("""
+            QLabel {
+                background-color: #11111b;
+                font-size: 9pt;
+                padding: 4px;
+            }
+        """)
         layout.addWidget(self.status_label)
         
         self.setLayout(layout)
     
     def add_message(self, message_data: dict):
         """Aggiunge un messaggio alla chat"""
-        is_own = message_data['username'] == self.own_username
-        bubble = MessageBubble(message_data, is_own)
-        
-        # Inserisci prima dello stretch
-        self.messages_layout.insertWidget(
-            self.messages_layout.count() - 1,
-            bubble
-        )
+        # Controlla se è un messaggio di sistema
+        if message_data['username'] == 'SYSTEM':
+            system_msg = SystemMessage(
+                message_data['content'],
+                message_data['timestamp']
+            )
+            self.messages_layout.insertWidget(
+                self.messages_layout.count() - 1,
+                system_msg
+            )
+        else:
+            # Messaggio normale
+            is_own = message_data['username'] == self.own_username
+            bubble = MessageBubble(message_data, is_own)
+            
+            # Inserisci prima dello stretch
+            self.messages_layout.insertWidget(
+                self.messages_layout.count() - 1,
+                bubble
+            )
         
         # Auto-scroll al nuovo messaggio
         QTimer.singleShot(50, self._scroll_to_bottom)
@@ -744,24 +914,28 @@ class MainWindow(QMainWindow):
             
             if message_bytes:
                 # Invia al server
-                if not self.network.send_message(message_bytes):
-                    self.statusBar().showMessage("❌ Errore invio messaggio", 3000)
-                    return
-                
-                # Aggiungi messaggio alla UI (non ancora confermato)
-                message_data = {
-                    'username': self.username,
-                    'content': content,
-                    'timestamp': int(time.time()),
-                    'verified': True,
-                    'sent': False  # Diventerà True quando riceveremo l'echo
-                }
-                self.chat_screen.add_message(message_data)
-                
-                # Invia al server
                 if self.network.send_message(message_bytes):
+                    # Aggiungi messaggio alla UI (già inviato e verificato)
+                    message_data = {
+                        'username': self.username,
+                        'content': content,
+                        'timestamp': int(time.time()),
+                        'verified': True,
+                        'sent': True
+                    }
+                    self.chat_screen.add_message(message_data)
                     self.chat_screen.message_input.clear()
                 else:
+                    self.statusBar().showMessage("❌ Errore invio messaggio", 3000)
+                    # Aggiungi messaggio come non inviato
+                    message_data = {
+                        'username': self.username,
+                        'content': content,
+                        'timestamp': int(time.time()),
+                        'verified': False,
+                        'sent': False
+                    }
+                    self.chat_screen.add_message(message_data)
                     self.chat_screen.set_status("⚠️ Errore invio messaggio", True)
             else:
                 self.chat_screen.set_status("⚠️ Impossibile crittografare il messaggio", True)

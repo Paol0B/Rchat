@@ -88,30 +88,78 @@ QLineEdit::placeholder, QTextEdit::placeholder {
 
 /* Area messaggi */
 #ChatArea {
-    background-color: #181825;
-    border: 1px solid #313244;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1e1e2e, stop:1 #181825);
+    border: none;
+    border-radius: 0px;
+}
+
+#ChatArea QWidget {
+    background: transparent;
+}
+
+/* Bolle messaggi */
+#MyMessageBubble {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #89b4fa, stop:1 #74c7ec);
+    border-radius: 18px;
+    border-top-right-radius: 4px;
+}
+
+#OtherMessageBubble {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 18px;
+    border-top-left-radius: 4px;
+}
+
+#OtherMessageBubble:hover {
+    background-color: #3a3d54;
+    border: 1px solid #585b70;
+}
+
+#SystemMessageFrame {
+    background-color: rgba(69, 71, 90, 0.3);
     border-radius: 12px;
+    border: 1px dashed rgba(166, 227, 161, 0.3);
+    margin: 8px 100px;
+}
+
+/* Animazione pulse per nuovi messaggi */
+@keyframes messageFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Scrollbar */
 QScrollBar:vertical {
-    background-color: #181825;
-    width: 12px;
-    border-radius: 6px;
+    background: transparent;
+    width: 10px;
+    margin: 0px;
 }
 
 QScrollBar::handle:vertical {
-    background-color: #45475a;
-    border-radius: 6px;
-    min-height: 20px;
+    background-color: rgba(69, 71, 90, 0.7);
+    border-radius: 5px;
+    min-height: 30px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background-color: #585b70;
+    background-color: rgba(88, 91, 112, 0.9);
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
 }
 
 /* Label */
