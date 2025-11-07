@@ -1,7 +1,7 @@
 use clap::Parser;
 use common::{ChatKey, ChainKey, IdentityKey, ChatType, ClientMessage, MessagePayload, ServerMessage, chat_code_to_room_id, generate_chat_code, generate_numeric_chat_code};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -390,7 +390,14 @@ where
             }
             
             // Gestisci eventi tastiera
+            // IMPORTANTE: Filtra solo eventi Press per evitare caratteri duplicati su Windows
             if let Event::Key(key) = evt {
+                // Ignora eventi Release e Repeat - gestisci solo Press
+                // Questo risolve il problema dei caratteri duplicati su Windows Terminal/cmd/pwsh
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                
                 match app.mode {
                     AppMode::Welcome => match key.code {
                         KeyCode::Char('1') => {
