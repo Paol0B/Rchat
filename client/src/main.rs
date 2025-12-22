@@ -611,7 +611,25 @@ where
                                             
                                             // Try to send the message
                                             if let Ok(serialized) = bincode::serialize(&payload) {
+                                                eprintln!("[DEBUG] ========== SENDING MESSAGE ==========");
+                                                eprintln!("[DEBUG] Chain index used: {}", chain_index);
+                                                eprintln!("[DEBUG] Message key (first 16 bytes): {}", 
+                                                    message_key[..16].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                                                eprintln!("[DEBUG] Payload fields:");
+                                                eprintln!("[DEBUG]   username: {}", payload.username);
+                                                eprintln!("[DEBUG]   content: {}...", &payload.content[..payload.content.len().min(50)]);
+                                                eprintln!("[DEBUG]   sequence: {}", payload.sequence_number);
+                                                eprintln!("[DEBUG]   chain_key_index in payload: {}", payload.chain_key_index);
+                                                eprintln!("[DEBUG] Serialized payload: {} bytes", serialized.len());
+                                                eprintln!("[DEBUG] Payload hex (first 64 bytes): {}", 
+                                                    serialized[..64.min(serialized.len())].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                                                
                                                 if let Ok(encrypted) = key.encrypt_with_chain(&serialized, &message_key) {
+                                                    eprintln!("[DEBUG] Encrypted data: {} bytes", encrypted.len());
+                                                    eprintln!("[DEBUG] Encrypted hex (first 64 bytes): {}", 
+                                                        encrypted[..64.min(encrypted.len())].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                                                    eprintln!("[DEBUG] ======================================");
+                                                    
                                                     // Add to pending messages for retry logic
                                                     app.pending_messages.push(PendingMessage {
                                                         message_id: message_id.clone(),
@@ -732,14 +750,21 @@ where
                     message_id,
                     ..
                 } => {
+                    eprintln!("[DEBUG] ========== RECEIVING MESSAGE ==========");
+                    eprintln!("[DEBUG] Encrypted data: {} bytes", encrypted_payload.len());
+                    eprintln!("[DEBUG] Encrypted hex (first 64 bytes): {}", 
+                        encrypted_payload[..64.min(encrypted_payload.len())].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                    
                     if let Some(ref key) = app.chat_key {
                         if let Some(ref mut chain_key) = app.chain_key {
+                            let current_index = chain_key.index();
+                            eprintln!("[DEBUG] Current chain index: {}", current_index);
+                            
                             // Try decrypting with sender's chain key index
                             let mut decrypted_payload = None;
                             
                             // Try a range of indices around the current position
                             // This handles out-of-order messages and different sender/receiver positions
-                            let current_index = chain_key.index();
                             let start_index = current_index.saturating_sub(5);
                             let end_index = current_index + 20; // Look ahead more for messages from others
                             
@@ -748,10 +773,28 @@ where
                                 test_chain.advance_to(test_index);
                                 let test_key = test_chain.next();
                                 
+                                if test_index <= 2 {  // Log first few indices
+                                    eprintln!("[DEBUG] Testing index {}:", test_index);
+                                    eprintln!("[DEBUG]   Test key (first 16 bytes): {}", 
+                                        test_key[..16].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                                }
+                                
                                 if let Ok(decrypted) = key.decrypt_with_chain(&encrypted_payload, &test_key) {
+                                    if test_index <= 2 {
+                                        eprintln!("[DEBUG]   Decryption successful! Payload: {} bytes", decrypted.len());
+                                        eprintln!("[DEBUG]   Decrypted hex (first 64 bytes): {}", 
+                                            decrypted[..64.min(decrypted.len())].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                                    }
+                                    
                                     if let Ok(payload) = bincode::deserialize::<MessagePayload>(&decrypted) {
+                                        eprintln!("[DEBUG] ✅ Successfully decrypted at index {}", test_index);
+                                        eprintln!("[DEBUG] Payload chain_key_index: {}", payload.chain_key_index);
+                                        eprintln!("[DEBUG] Payload username: {}", payload.username);
+                                        eprintln!("[DEBUG] Payload content: {}...", &payload.content[..payload.content.len().min(50)]);
+                                        
                                         // Verify the chain_key_index matches
                                         if payload.chain_key_index != test_index {
+                                            eprintln!("[DEBUG] ❌ Chain index mismatch: expected {}, got {}", test_index, payload.chain_key_index);
                                             continue; // Wrong index, keep trying
                                         }
                                         

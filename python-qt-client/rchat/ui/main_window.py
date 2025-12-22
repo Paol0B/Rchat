@@ -817,10 +817,20 @@ class MainWindow(QMainWindow):
         self.chat_screen.own_username = self.username
         self.stacked_widget.setCurrentWidget(self.chat_screen)
     
-    def create_chat(self, chat_type: str):
+    def create_chat(self, chat_type: str = "OneToOne"):
         """Crea una nuova chat"""
         if not self.controller:
             QMessageBox.warning(self, "Errore", "Controller non inizializzato!")
+            return
+        
+        # IMPORTANTE: Previeni creazione se già in una chat
+        if self.controller.connected and self.controller.current_chat_code:
+            QMessageBox.warning(
+                self,
+                "Chat Attiva",
+                "Sei già in una chat attiva!\n\n"
+                "Chiudi la chat corrente prima di crearne una nuova."
+            )
             return
         
         if not self.network or not self.network.running:
@@ -861,6 +871,16 @@ class MainWindow(QMainWindow):
         """Unisciti a una chat esistente"""
         if not self.controller:
             QMessageBox.warning(self, "Errore", "Controller non inizializzato!")
+            return
+        
+        # IMPORTANTE: Previeni join se già in una chat
+        if self.controller.connected and self.controller.current_chat_code:
+            QMessageBox.warning(
+                self,
+                "Chat Attiva",
+                "Sei già in una chat attiva!\n\n"
+                "Chiudi la chat corrente prima di unirti a un'altra."
+            )
             return
         
         if not self.network or not self.network.running:

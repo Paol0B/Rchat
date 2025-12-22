@@ -54,6 +54,9 @@ class ChatController(QObject):
         Crea una nuova chat
         Returns: Messaggio serializzato da inviare al server
         """
+        print(f"[DEBUG] *** CREATE_CHAT called with code: {chat_code}")
+        print(f"[DEBUG] *** Resetting chain to index 0")
+        
         # Deriva chiavi dal codice
         self.current_chat_code = chat_code
         self.current_room_id = chat_code_to_room_id(chat_code)
@@ -75,6 +78,9 @@ class ChatController(QObject):
         Unisciti a una chat esistente
         Returns: Messaggio serializzato da inviare al server
         """
+        print(f"[DEBUG] *** JOIN_CHAT called with code: {chat_code}")
+        print(f"[DEBUG] *** Resetting chain to index 0")
+        
         # Deriva chiavi dal codice
         self.current_chat_code = chat_code
         self.current_room_id = chat_code_to_room_id(chat_code)
@@ -127,14 +133,23 @@ class ChatController(QObject):
         # Serializza payload
         payload_bytes = payload.to_bytes()
         
+        print(f"[DEBUG] ========== SENDING MESSAGE ==========")
+        print(f"[DEBUG] Chain index used: {chain_index}")
+        print(f"[DEBUG] Message key (first 16 bytes): {message_key[:16].hex()}")
+        print(f"[DEBUG] Payload fields:")
+        print(f"[DEBUG]   username: {payload.username}")
+        print(f"[DEBUG]   content: {content[:50]}...")
+        print(f"[DEBUG]   sequence: {payload.sequence_number}")
+        print(f"[DEBUG]   chain_key_index in payload: {payload.chain_key_index}")
         print(f"[DEBUG] Serialized payload: {len(payload_bytes)} bytes")
-        print(f"[DEBUG] First 50 bytes: {payload_bytes[:50].hex()}")
+        print(f"[DEBUG] Payload hex (first 64 bytes): {payload_bytes[:64].hex()}")
         
         # Cripta con chiave derivata
         encrypted = self.chat_key.encrypt_with_chain(payload_bytes, message_key)
         
-        print(f"[DEBUG] Encrypted payload: {len(encrypted)} bytes")
-        print(f"[DEBUG] Message key (first 16 bytes): {message_key[:16].hex()}")
+        print(f"[DEBUG] Encrypted data: {len(encrypted)} bytes")
+        print(f"[DEBUG] Encrypted hex (first 64 bytes): {encrypted[:64].hex()}")
+        print(f"[DEBUG] ======================================")
         
         # Crea messaggio per server
         msg_bytes = ClientMessage.send_message(
@@ -203,8 +218,10 @@ class ChatController(QObject):
         # Prova a decriptare con diversi indici della chain
         current_index = self.chain_key.index
         
-        print(f"[DEBUG] Trying to decrypt message, current chain index: {current_index}")
-        print(f"[DEBUG] Encrypted data length: {len(encrypted)} bytes")
+        print(f"[DEBUG] ========== RECEIVING MESSAGE ==========")
+        print(f"[DEBUG] Current chain index: {current_index}")
+        print(f"[DEBUG] Encrypted data: {len(encrypted)} bytes")
+        print(f"[DEBUG] Encrypted hex (first 64 bytes): {encrypted[:64].hex()}")
         
         # Per decriptare messaggi passati, dobbiamo ricreare la chain da zero
         # e avanzare fino all'indice corretto
@@ -218,22 +235,28 @@ class ChatController(QObject):
                 test_chain.advance_to(test_index)
                 test_key = test_chain.next()
                 
-                if test_index == 0:  # Log dettagliato per index 0
-                    print(f"[DEBUG] Testing index 0:")
+                if test_index <= 2:  # Log dettagliato per i primi indici
+                    print(f"[DEBUG] Testing index {test_index}:")
                     print(f"[DEBUG]   Test key (first 16 bytes): {test_key[:16].hex()}")
                 
                 # Prova a decriptare
                 decrypted = self.chat_key.decrypt_with_chain(encrypted, test_key)
                 
+                if test_index <= 2:
+                    print(f"[DEBUG]   Decryption successful! Payload: {len(decrypted)} bytes")
+                    print(f"[DEBUG]   Decrypted hex (first 64 bytes): {decrypted[:64].hex()}")
+                
                 # Prova a deserializzare
                 payload = MessagePayload.from_bytes(decrypted)
                 
-                print(f"[DEBUG] Successfully decrypted at index {test_index}")
+                print(f"[DEBUG] ✅ Successfully decrypted at index {test_index}")
                 print(f"[DEBUG] Payload chain_key_index: {payload.chain_key_index}")
+                print(f"[DEBUG] Payload username: {payload.username}")
+                print(f"[DEBUG] Payload content: {payload.content[:50]}...")
                 
                 # Verifica indice chain
                 if payload.chain_key_index != test_index:
-                    print(f"[DEBUG] Chain index mismatch: expected {test_index}, got {payload.chain_key_index}")
+                    print(f"[DEBUG] ❌ Chain index mismatch: expected {test_index}, got {payload.chain_key_index}")
                     continue
                 
                 # Verifica firma
